@@ -1,0 +1,19 @@
+{
+  "name": "floaty-territory-history",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Daily snapshots of Floaty club territory (claimed H3 hexagons) for the whole world",
+  "scripts": {
+    "snapshot": "node snapshot.js",
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "@mapbox/vector-tile": "^2.0.5",
+    "h3-js": "^4.5.0",
+    "pbf": "^4.0.2"
+  }
+}
