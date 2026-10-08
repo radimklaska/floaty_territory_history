@@ -9,6 +9,8 @@ A GitHub Action takes a snapshot every day at 00:17 UTC and commits it here.
 
 ## Web map
 
+**Live: <https://klaska.net/floaty_territory_history/>**
+
 `docs/` is a small static page (Leaflet + h3-js, no build step) that draws any
 day's territory:
 - **Zoom levels:** cells are dots when zoomed out, hexagons from zoom 9, one
