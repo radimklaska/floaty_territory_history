@@ -19,6 +19,7 @@ const HEX_ZOOM = 9;          // below: each cell is a small square (a hexagon wo
 const LABEL_ZOOM = 10;
 const GRID_ZOOM = 12;        // a cell is ~40 px wide here
 const PAD_KM = 0.7;          // > a cell's circumradius (~0.53 km)
+const GREY = '#8a94a3';      // other clubs while one is selected
 
 // GitHub Pages serves only docs/; the snapshots are read from the repo itself
 // (raw.githubusercontent.com allows cross-origin reads). ?data=<path> points at
@@ -160,8 +161,9 @@ function drawTile(ctx, coords, size) {
     const kmPx = (2 ** z * 256) / (40075 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
     const s = Math.max(2, 0.95 * kmPx);                         // ~1 km wide, at least 2 px
     for (const [club, hs] of groups) {
-      ctx.globalAlpha = focus && focus !== club ? 0.15 : 0.9;
-      ctx.fillStyle = club.color;
+      const dim = focus && focus !== club;
+      ctx.globalAlpha = dim ? 0.45 : 0.9;
+      ctx.fillStyle = dim ? GREY : club.color;
       for (const h of hs) { const p = pt(centre(h)); ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s); }
     }
   } else {
@@ -170,13 +172,13 @@ function drawTile(ctx, coords, size) {
       const dim = focus && focus !== club;
       ctx.beginPath();
       for (const h of hs) path(h);
-      ctx.globalAlpha = dim ? 0.08 : focus ? 0.55 : 0.35;
-      ctx.fillStyle = club.color;
+      ctx.globalAlpha = dim ? 0.22 : focus ? 0.55 : 0.35;
+      ctx.fillStyle = dim ? GREY : club.color;
       ctx.fill();
-      if (z >= 11 && !dim) {
-        ctx.globalAlpha = 0.85;
-        ctx.strokeStyle = club.color;
-        ctx.lineWidth = 1.2;
+      if (z >= 11) {
+        ctx.globalAlpha = dim ? 0.35 : 0.85;
+        ctx.strokeStyle = dim ? GREY : club.color;
+        ctx.lineWidth = dim ? 1 : 1.2;
         ctx.stroke();
       }
     }
