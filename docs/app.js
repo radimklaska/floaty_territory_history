@@ -10,7 +10,9 @@
 const { L, h3 } = window;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const fmt = (n) => n.toLocaleString('en-US');
+const fmt = (n) => Number(n).toLocaleString('en-US');      // Number(): a string can't smuggle HTML in
+// colours end up in inline styles: plain hex only (no CSS injection)
+const hex = (c) => (/^#[0-9a-f]{3,8}$/i.test(String(c)) ? String(c) : '#888888');
 
 const RES = 8;
 const HEX_ZOOM = 9;          // below: each cell is a small square (a hexagon would be ~2 px)
@@ -19,11 +21,15 @@ const GRID_ZOOM = 12;        // a cell is ~40 px wide here
 const PAD_KM = 0.7;          // > a cell's circumradius (~0.53 km)
 
 // GitHub Pages serves only docs/; the snapshots are read from the repo itself
-// (raw.githubusercontent.com allows cross-origin reads). ?data=<url> overrides,
-// e.g. ?data=../ when serving the repo root locally.
+// (raw.githubusercontent.com allows cross-origin reads). ?data=<path> points at
+// a copy on the page's own origin, e.g. ?data=../ when serving the repo root
+// locally — never another site, so a crafted link can't feed the page data.
 const Q = new URLSearchParams(location.search);
 const DATA = (() => {
-  if (Q.get('data')) return new URL(Q.get('data'), location.href).href;
+  if (Q.get('data')) {
+    const u = new URL(Q.get('data'), location.href);
+    if (u.origin === location.origin) return u.href;
+  }
   const owner = location.hostname.match(/^([^.]+)\.github\.io$/)?.[1];
   const repo = location.pathname.split('/')[1];
   return owner && repo
@@ -78,8 +84,8 @@ const loaded = new Map();    // date -> prepared snapshot (a few kept)
 // clubs (biggest first) + h3 -> club + 1°×1° buckets of cells for tile queries
 function prepare(doc) {
   const clubs = [];
-  for (const [id, c] of Object.entries(doc.clubs)) clubs.push({ id, name: c.name, color: c.color, cells: c.cells });
-  for (const [color, cells] of Object.entries(doc.unnamed || {})) clubs.push({ id: 'unnamed:' + color, name: 'unknown club', color, cells });
+  for (const [id, c] of Object.entries(doc.clubs)) clubs.push({ id, name: String(c.name), color: hex(c.color), cells: c.cells });
+  for (const [color, cells] of Object.entries(doc.unnamed || {})) clubs.push({ id: 'unnamed:' + color, name: 'unknown club', color: hex(color), cells });
   clubs.sort((a, b) => b.cells.length - a.cells.length);
   const cellClub = new Map();
   const buckets = new Map(); // "lat:lng" -> { la, lo, cells }
@@ -323,9 +329,9 @@ function renderTotals() {
   const i = days.findIndex((d) => d.date === cur.date);
   const prev = i > 0 ? days[i - 1] : null;
   const delta = prev ? cur.totals.cells - prev.cells : null;
-  const deltaTxt = delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${fmt(delta)} vs ${prev.date})`;
+  const deltaTxt = delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${fmt(delta)} vs ${esc(prev.date)})`;
   $('totals').innerHTML = `<b>${fmt(cur.totals.cells)}</b> cells${deltaTxt} · <b>${fmt(cur.totals.clubs)}</b> clubs<br>`
-    + `taken ${esc(cur.takenAt.slice(0, 16).replace('T', ' '))} UTC`;
+    + `taken ${esc(String(cur.takenAt).slice(0, 16).replace('T', ' '))} UTC`;
   $('prev').disabled = i <= 0;
   $('next').disabled = i < 0 || i >= days.length - 1;
 }
