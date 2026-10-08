@@ -32,7 +32,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add daily latest.json
+          git add daily latest.json index.json
           if git diff --cached --quiet; then echo 'nothing changed'; exit 0; fi
           git commit -q -m "Territory snapshot $(date -u +%F)" -m "$(node -p "const t=require('./latest.json').totals; t.cells+' cells, '+t.clubs+' clubs'")"
           git push

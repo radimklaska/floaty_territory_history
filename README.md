@@ -7,12 +7,35 @@ shows the current state, so this repo keeps the history.
 
 A GitHub Action takes a snapshot every day at 00:17 UTC and commits it here.
 
+## Web map
+
+`docs/` is a small static page (Leaflet + h3-js, no build step) that draws any
+day's territory:
+- **Zoom levels:** cells are dots when zoomed out, hexagons from zoom 9, one
+  label per contiguous club patch from zoom 10, and the faint unclaimed grid
+  from zoom 12.
+- **Interaction:** hover a cell for its club. Click a club in the list (or on
+  the map) to highlight it and zoom to its territory.
+- **Navigation:** ◀ ▶ (or Alt+←/→) step through the days.
+- **Links:** the view is kept in the URL (`#d=<date>&c=<clubId>&m=<zoom>/<lat>/<lng>`),
+  so links are shareable.
+
+It reads `index.json` and the daily files straight from the repo (via
+`raw.githubusercontent.com`), so the published site stays tiny however long
+the history gets. To try it locally, serve the repo root and point it at the
+local data:
+
+```bash
+python3 -m http.server 8000   # then open http://localhost:8000/docs/?data=../
+```
+
 ## Files
 
 | Path | What |
 |---|---|
 | `daily/YYYY/YYYY-MM-DD.json` | the snapshot for that day (UTC date of the run) |
 | `latest.json` | the newest snapshot; `git log -p latest.json` is a day-by-day diff of which cells changed hands |
+| `index.json` | every day on file with its totals (the web map's date list) |
 
 Each file is pretty-printed, with clubs sorted by id and one cell per line, so
 diffs stay readable. Files over 1 MB show as "View raw" on GitHub.

@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Floaty territory history</title>
+<meta name="description" content="Daily snapshots of the hexagons Floaty clubs have claimed, worldwide." />
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/h3-js@4.5.0/dist/h3-js.umd.js"
+  integrity="sha384-btAksX4N/Qw1lEPyJQdtZC59TR3dvM7HgYngL8bCs7Dtysie9D3TiJ0GGFZBbXAy" crossorigin="anonymous"></script>
+
+<style>
+  :root { --bg:#0e1116; --panel:#171c24; --line:#222a35; --fg:#e6edf3; --muted:#8b97a7; --accent:#4ea1ff; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font:14px/1.4 system-ui,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--fg); }
+  #app { display:flex; height:100%; position:relative; }
+  #side { width:330px; flex:0 0 330px; background:var(--panel); padding:14px; border-right:1px solid var(--line);
+    display:flex; flex-direction:column; gap:10px; min-height:0; }
+  #map { flex:1; background:#0b0e13; }
+  h1 { font-size:16px; margin:0; }
+  .head { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .sub { color:var(--muted); font-size:12px; margin:0; }
+  a { color:var(--accent); }
+  button, select, input[type=search] { background:#222b38; color:var(--fg); border:0; border-radius:7px; padding:7px 9px; font:600 13px system-ui,sans-serif; }
+  button { cursor:pointer; }
+  button:disabled { opacity:.4; cursor:default; }
+  .row { display:flex; gap:6px; align-items:center; }
+  #date { flex:1; min-width:0; cursor:pointer; }
+  .stats { color:var(--muted); font-size:12px; }
+  .stats b { color:var(--fg); }
+  .chk { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; cursor:pointer; }
+  #focus { font-size:12px; color:var(--muted); background:#10233a; border-radius:7px; padding:6px 8px; }
+  #focus[hidden] { display:none; }
+  #clubs { list-style:none; margin:0; padding:0; overflow:auto; flex:1; min-height:0; border-top:1px solid var(--line); }
+  #clubs li { display:flex; align-items:center; gap:8px; padding:5px 4px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; }
+  #clubs li:hover { background:#1d2430; }
+  #clubs li.on { background:#10233a; }
+  #clubs .sw, .tip .sw, .hex-label .sw { width:10px; height:10px; border-radius:2px; flex:none; display:inline-block; }
+  #clubs .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #clubs .n { color:var(--muted); font:12px ui-monospace,monospace; }
+  .hint { color:var(--muted); font-size:11px; margin:0; }
+  #menu { position:absolute; top:10px; left:10px; z-index:1100; display:none; width:38px; height:36px; padding:0; font-size:17px; background:var(--panel); border:1px solid var(--line); }
+  #app.collapsed #side { display:none; }
+  #app.collapsed #menu { display:block; }
+  #app.collapsed .leaflet-top.leaflet-left { margin-top:44px; }
+  /* territory labels + hover tip */
+  .hex-label { background:none; border:0; }
+  .hex-label .chip, .leaflet-tooltip.tip { display:inline-flex; align-items:center; gap:5px; background:rgba(8,12,18,.84); color:var(--fg);
+    border:1px solid rgba(255,255,255,.14); border-radius:6px; padding:1px 6px; font:600 11px system-ui,sans-serif; white-space:nowrap; }
+  .hex-label .chip { transform:translate(-50%,-50%); }
+  .hex-label .sw, .tip .sw { width:8px; height:8px; }
+  .leaflet-tooltip.tip { box-shadow:none; }
+  .leaflet-tooltip-top.tip::before { border-top-color:rgba(8,12,18,.84); }
+  .tip .n { color:var(--muted); font-weight:400; }
+  /* phones: the panel becomes the top 45% of the screen */
+  @media (max-width: 700px) {
+    #app { flex-direction:column; }
+    #side { width:auto; flex:0 0 45%; border-right:0; border-bottom:1px solid var(--line); overflow:auto; }
+    #clubs { flex:none; overflow:visible; }
+    .hint { display:none; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <button id="menu" title="Open panel">☰</button>
+  <aside id="side">
+    <div class="head">
+      <h1>Floaty territory history</h1>
+      <button id="collapse" title="Hide panel" style="padding:3px 9px">«</button>
+    </div>
+    <p class="sub">Hexagons claimed by <a href="https://floaty-app.com/">Floaty</a> clubs, snapshotted daily.
+      <a href="https://github.com/radimklaska/floaty_territory_history">Data &amp; source</a></p>
+    <div class="row">
+      <button id="prev" title="Previous day">◀</button>
+      <select id="date" title="Snapshot date (UTC)"></select>
+      <button id="next" title="Next day">▶</button>
+    </div>
+    <div class="stats" id="totals">Loading…</div>
+    <label class="chk"><input type="checkbox" id="grid" checked /> Show unclaimed grid (zoom 12+)</label>
+    <input id="search" type="search" placeholder="Filter clubs…" />
+    <div id="focus" hidden>Showing <b></b> only · <a href="#" id="unfocus">show all</a></div>
+    <ol id="clubs"></ol>
+    <p class="hint">Click a club (or a hexagon) to highlight it. Zoomed out, each cell is a dot; hexagons from zoom 9, club labels from 10, unclaimed grid from 12.</p>
+  </aside>
+  <div id="map"></div>
+</div>
+<script type="module" src="app.js"></script>
+</body>
+</html>

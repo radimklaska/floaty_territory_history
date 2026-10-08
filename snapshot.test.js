@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { snapshotDoc, writeSnapshot } from './snapshot.js';
+import { snapshotDoc, writeSnapshot, updateIndex } from './snapshot.js';
 
 const world = {
   cells: 3,
@@ -33,4 +33,21 @@ test('writeSnapshot: daily/YYYY/YYYY-MM-DD.json + identical latest.json, one cel
   assert.ok(text.split('\n').some((l) => l.trim() === '"881e3a0001fffff",'));   // each cell on its own line
   assert.ok(text.endsWith('}\n'));
   assert.deepEqual(fs.readdirSync(path.dirname(dayFile)), ['2026-10-08.json']); // no .tmp left behind
+});
+
+test('updateIndex: lists every daily file in order, reuses known entries, refreshes the current day', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'floaty-history-'));
+  const d1 = snapshotDoc(world, new Date('2025-12-31T00:17:00Z'));
+  const d2 = snapshotDoc({ ...world, cells: 4 }, new Date('2026-01-01T00:17:00Z'));
+  writeSnapshot(dir, d1);
+  writeSnapshot(dir, d2);
+  const days = updateIndex(dir, d2);
+  assert.deepEqual(days.map((d) => [d.date, d.cells, d.file]), [
+    ['2025-12-31', 3, 'daily/2025/2025-12-31.json'],
+    ['2026-01-01', 4, 'daily/2026/2026-01-01.json'],
+  ]);
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(dir, 'index.json'), 'utf8')).days, days);
+  // a re-run of the same day replaces only that day's entry
+  const again = updateIndex(dir, snapshotDoc({ ...world, cells: 5 }, new Date('2026-01-01T09:00:00Z')));
+  assert.deepEqual(again.map((d) => d.cells), [3, 5]);
 });
