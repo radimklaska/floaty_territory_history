@@ -366,7 +366,7 @@ function renderClubs() {
   alignCols();
 }
 // keep the column headers clear of the list's scrollbar (which comes and goes with the layout)
-function alignCols() { const list = $('clubs'); $('cols').style.paddingRight = 4 + list.offsetWidth - list.clientWidth + 'px'; }
+function alignCols() { const list = $('clubs'); $('table').style.setProperty('--sbw', list.offsetWidth - list.clientWidth + 'px'); }
 window.addEventListener('resize', alignCols);
 $('search').addEventListener('input', renderClubs);
 $('grid').addEventListener('change', () => grid.redraw());

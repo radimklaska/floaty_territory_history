@@ -37,7 +37,8 @@
   #focus { font-size:12px; color:var(--muted); background:#10233a; border-radius:7px; padding:6px 8px; }
   #focus[hidden] { display:none; }
   #table { display:flex; flex-direction:column; flex:1; min-height:0; }
-  .cols { display:flex; align-items:center; gap:8px; padding:0 4px; }
+  /* a 10px gutter before the list's scrollbar; --sbw is the scrollbar's width, set by the script */
+  .cols { display:flex; align-items:center; gap:8px; padding:0 calc(10px + var(--sbw, 0px)) 0 4px; }
   .cols .sw { width:10px; flex:none; }
   .cols button { background:none; border-radius:0; padding:4px 0; font:600 10px system-ui,sans-serif; color:var(--muted);
     text-transform:uppercase; text-align:left; white-space:nowrap; }
@@ -45,7 +46,7 @@
   .cols .name { flex:1; min-width:0; }
   .cols .n, .cols .d { width:52px; text-align:right; flex:none; }
   #clubs { list-style:none; margin:0; padding:0; overflow:auto; flex:1; min-height:0; border-top:1px solid var(--line); }
-  #clubs li { display:flex; align-items:center; gap:8px; padding:5px 4px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; }
+  #clubs li { display:flex; align-items:center; gap:8px; padding:5px 10px 5px 4px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; }
   #clubs li:hover { background:#1d2430; }
   #clubs li.on { background:#10233a; }
   #clubs .sw, .tip .sw, .hex-label .sw { width:10px; height:10px; border-radius:2px; flex:none; display:inline-block; }
