@@ -4,8 +4,9 @@
 // time, and draws every claimed H3 cell on a canvas GridLayer: dots when
 // zoomed out, hexagons from HEX_ZOOM, one label per contiguous same-club patch
 // from LABEL_ZOOM, and the faint unclaimed grid from GRID_ZOOM. Click a club
-// (list or map) to highlight it. State lives in the URL hash:
-//   #d=<date>&c=<clubId>&m=<zoom>/<lat>/<lng>
+// (list or map) to highlight it; "show only changes" greys out every cell the
+// previous day already had under the same club. State lives in the URL hash:
+//   #d=<date>&c=<clubId>&diff=1&m=<zoom>/<lat>/<lng>
 
 const { L, h3 } = window;
 const $ = (id) => document.getElementById(id);
@@ -19,7 +20,7 @@ const HEX_ZOOM = 9;          // below: each cell is a small square (a hexagon wo
 const LABEL_ZOOM = 10;
 const GRID_ZOOM = 12;        // a cell is ~40 px wide here
 const PAD_KM = 0.7;          // > a cell's circumradius (~0.53 km)
-const GREY = '#8a94a3';      // other clubs while one is selected
+const GREY = '#8a94a3';      // greyed-out cells: other clubs while one is selected, unchanged cells in diff mode
 
 // GitHub Pages serves only docs/; the snapshots are read from the repo itself
 // (raw.githubusercontent.com allows cross-origin reads). ?data=<path> points at
@@ -80,6 +81,7 @@ const ring = (h) => { let r = rings.get(h); if (!r) rings.set(h, (r = h3.cellToB
 let days = [];               // index.json entries, oldest first
 let cur = null;              // the prepared snapshot on screen
 let focus = null;            // highlighted club or null
+let diffPrev = null;         // the previous day's snapshot while "show only changes" is on, else null
 const loaded = new Map();    // date -> prepared snapshot (a few kept)
 
 // clubs (biggest first) + h3 -> club + 1°×1° buckets of cells for tile queries
@@ -126,6 +128,10 @@ function cellsIn(b) {
   return out;
 }
 
+// grey instead of the club colour: other clubs while one is selected, and in
+// diff mode every cell the previous day already had under the same club
+const dimmed = (h, club) => (focus !== null && club !== focus) || (diffPrev !== null && diffPrev.cellClub.get(h)?.id === club.id);
+
 // ---------- canvas tiles ----------
 function drawTile(ctx, coords, size) {
   const z = coords.z;
@@ -138,11 +144,13 @@ function drawTile(ctx, coords, size) {
     ctx.closePath();
   };
 
-  const byClub = new Map();
+  const greyed = new Map(), coloured = new Map();              // club -> cells
   for (const h of cellsIn(box)) {
     const club = cur.cellClub.get(h);
-    if (!byClub.has(club)) byClub.set(club, []);
-    byClub.get(club).push(h);
+    const m = dimmed(h, club) ? greyed : coloured;
+    let hs = m.get(club);
+    if (!hs) m.set(club, (hs = []));
+    hs.push(h);
   }
 
   if (z >= GRID_ZOOM && $('grid').checked) {                  // unclaimed: faint outlines only
@@ -154,25 +162,24 @@ function drawTile(ctx, coords, size) {
     ctx.stroke();
   }
 
-  // the highlighted club last, on top
-  const groups = [...byClub].sort((a, b) => (a[0] === focus) - (b[0] === focus));
+  // [club, cells, dim]: grey first, so the coloured cells draw on top
+  const groups = [...[...greyed].map(([c, hs]) => [c, hs, true]), ...[...coloured].map(([c, hs]) => [c, hs, false])];
+  const hl = focus !== null || diffPrev !== null;              // something is highlighted: the colour pops more
   if (z < HEX_ZOOM) {
     const lat = (box.n + box.s) / 2;
     const kmPx = (2 ** z * 256) / (40075 * Math.max(0.1, Math.cos((lat * Math.PI) / 180)));
     const s = Math.max(2, 0.95 * kmPx);                         // ~1 km wide, at least 2 px
-    for (const [club, hs] of groups) {
-      const dim = focus && focus !== club;
+    for (const [club, hs, dim] of groups) {
       ctx.globalAlpha = dim ? 0.45 : 0.9;
       ctx.fillStyle = dim ? GREY : club.color;
       for (const h of hs) { const p = pt(centre(h)); ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s); }
     }
   } else {
     ctx.lineJoin = 'round';
-    for (const [club, hs] of groups) {
-      const dim = focus && focus !== club;
+    for (const [club, hs, dim] of groups) {
       ctx.beginPath();
       for (const h of hs) path(h);
-      ctx.globalAlpha = dim ? 0.22 : focus ? 0.55 : 0.35;
+      ctx.globalAlpha = dim ? 0.22 : hl ? 0.55 : 0.35;
       ctx.fillStyle = dim ? GREY : club.color;
       ctx.fill();
       if (z >= 11) {
@@ -214,7 +221,7 @@ const scheduleLabels = () => { clearTimeout(labelTimer); labelTimer = setTimeout
 function drawLabels() {
   labels.clearLayers();
   if (!cur || map.getZoom() < LABEL_ZOOM) return;
-  const visible = new Set(cellsIn(padded(map.getBounds())));
+  const visible = new Set(cellsIn(padded(map.getBounds())).filter((h) => !dimmed(h, cur.cellClub.get(h))));   // coloured cells only
   if (visible.size > 40_000) return;
   const patches = [];
   const seen = new Set();
@@ -233,7 +240,6 @@ function drawLabels() {
         queue.push(n);
       }
     }
-    if (focus && club !== focus) continue;
     let lat = 0, lng = 0;
     for (const h of members) { const c = centre(h); lat += c[0]; lng += c[1]; }
     lat /= members.length; lng /= members.length;
@@ -266,15 +272,18 @@ function drawLabels() {
 
 // ---------- hover + click on the map ----------
 const tip = L.tooltip({ direction: 'top', offset: [0, -6], className: 'tip', opacity: 1 });
-const clubAt = (latlng) => (cur && map.getZoom() >= HEX_ZOOM ? cur.cellClub.get(h3.latLngToCell(latlng.lat, latlng.lng, RES)) : null);
+const cellAt = (latlng) => (cur && map.getZoom() >= HEX_ZOOM ? h3.latLngToCell(latlng.lat, latlng.lng, RES) : null);
+const clubAt = (latlng) => { const h = cellAt(latlng); return h ? cur.cellClub.get(h) : null; };
 let hoverAt = 0;
 map.on('mousemove', (e) => {
   const t = performance.now();
   if (t - hoverAt < 50) return;
   hoverAt = t;
-  const club = clubAt(e.latlng);
+  const h = cellAt(e.latlng), club = h && cur.cellClub.get(h);
   if (!club) { map.closeTooltip(tip); return; }
-  tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${esc(club.color)}"></span><b>${esc(club.name)}</b> <span class="n">${fmt(club.cells.length)} cells</span>`);
+  let change = '';                                             // diff mode: how the cell differs from the previous day
+  if (diffPrev) { const was = diffPrev.cellClub.get(h); change = !was ? ' · new' : was.id !== club.id ? ` · was ${esc(was.name)}` : ''; }
+  tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${esc(club.color)}"></span><b>${esc(club.name)}</b> <span class="n">${fmt(club.cells.length)} cells${change}</span>`);
   if (!map.hasLayer(tip)) tip.addTo(map);
 });
 map.on('mouseout', () => map.closeTooltip(tip));
@@ -326,24 +335,30 @@ function renderClubs() {
 }
 $('search').addEventListener('input', renderClubs);
 $('grid').addEventListener('change', () => grid.redraw());
+$('diff').addEventListener('change', () => loadDate($('date').value));   // (re)loads the previous day as needed
 
 function renderTotals() {
   const i = days.findIndex((d) => d.date === cur.date);
   const prev = i > 0 ? days[i - 1] : null;
   const delta = prev ? cur.totals.cells - prev.cells : null;
   const deltaTxt = delta === null ? '' : ` (${delta >= 0 ? '+' : ''}${fmt(delta)} vs ${esc(prev.date)})`;
+  let diffTxt = '';
+  if (diffPrev) {                                              // what is in colour
+    let gained = 0, taken = 0;
+    for (const [h, club] of cur.cellClub) { const was = diffPrev.cellClub.get(h); if (!was) gained++; else if (was.id !== club.id) taken++; }
+    diffTxt = `<br>in colour: <b>${fmt(gained)}</b> newly claimed, <b>${fmt(taken)}</b> changed hands`;
+  }
   $('totals').innerHTML = `<b>${fmt(cur.totals.cells)}</b> cells${deltaTxt} · <b>${fmt(cur.totals.clubs)}</b> clubs<br>`
-    + `taken ${esc(String(cur.takenAt).slice(0, 16).replace('T', ' '))} UTC`;
+    + `taken ${esc(String(cur.takenAt).slice(0, 16).replace('T', ' '))} UTC` + diffTxt;
   $('prev').disabled = i <= 0;
+  $('diff').disabled = i <= 0;                                 // the first day has nothing to compare against
+  $('diffLabel').title = i <= 0 ? 'No earlier snapshot to compare with.' : $('diffLabel').dataset.title;
   $('next').disabled = i < 0 || i >= days.length - 1;
 }
 
 // ---------- date navigation ----------
 let loadToken = 0;
-async function loadDate(date) {
-  const entry = days.find((d) => d.date === date) || days[days.length - 1];
-  const token = ++loadToken;
-  $('date').value = entry.date;
+async function loadSnap(entry) {                               // from the cache (kept most-recently-used), or fetched
   let snap = loaded.get(entry.date);
   if (!snap) {
     $('totals').textContent = `Loading ${entry.date}…`;
@@ -352,14 +367,33 @@ async function loadDate(date) {
       if (!r.ok) throw new Error('HTTP ' + r.status);
       snap = prepare(await r.json());
     } catch (e) {
-      if (token === loadToken) $('totals').textContent = `Couldn't load ${entry.date}: ${e.message || e}`;
-      return;
+      throw new Error(`Couldn't load ${entry.date}: ${e.message || e}`);
     }
-    loaded.set(entry.date, snap);
-    if (loaded.size > 4) loaded.delete(loaded.keys().next().value);
+  }
+  loaded.delete(entry.date);
+  loaded.set(entry.date, snap);
+  if (loaded.size > 4) loaded.delete(loaded.keys().next().value);
+  return snap;
+}
+// show a day; with "show only changes" on, its previous day is loaded too
+async function loadDate(date) {
+  if (!days.length) return;
+  let i = days.findIndex((d) => d.date === date);
+  if (i < 0) i = days.length - 1;
+  const entry = days[i];
+  const token = ++loadToken;
+  $('date').value = entry.date;
+  let snap, before = null;
+  try {
+    snap = await loadSnap(entry);
+    if ($('diff').checked && i > 0) before = await loadSnap(days[i - 1]);   // read after the await: the box may have been ticked meanwhile
+  } catch (e) {
+    if (token === loadToken) $('totals').textContent = e.message;
+    return;
   }
   if (token !== loadToken) return;
   cur = snap;
+  diffPrev = before;
   if (focus) focus = cur.clubs.find((c) => c.id === focus.id) || null;   // keep the highlight across days
   $('focus').hidden = !focus;
   renderTotals();
@@ -386,6 +420,7 @@ function writeHash() {
   const p = new URLSearchParams();
   if (cur) p.set('d', cur.date);
   if (focus) p.set('c', focus.id);
+  if ($('diff').checked) p.set('diff', '1');
   const c = map.getCenter();
   p.set('m', `${map.getZoom()}/${c.lat.toFixed(4)}/${c.lng.toFixed(4)}`);
   history.replaceState(null, '', '#' + p.toString().replaceAll('%2F', '/'));
@@ -402,7 +437,11 @@ function hashView() {
 window.addEventListener('hashchange', async () => {
   const { h, view } = hashView();
   if (view) map.setView([view.lat, view.lng], view.z);
-  if (h.get('d') && h.get('d') !== cur?.date) await loadDate(h.get('d'));
+  const diff = h.get('diff') === '1';
+  if ((h.get('d') && h.get('d') !== cur?.date) || diff !== $('diff').checked) {
+    $('diff').checked = diff;
+    await loadDate(h.get('d') || cur?.date);
+  }
   const club = h.get('c') ? cur?.clubs.find((c) => c.id === h.get('c')) : null;
   if ((club || null) !== focus) setFocus(club || null, !view);
 });
@@ -426,6 +465,7 @@ window.addEventListener('hashchange', async () => {
     o.textContent = `${d.date} · ${fmt(d.cells)} cells`;
     $('date').appendChild(o);
   }
+  $('diff').checked = h.get('diff') === '1';
   await loadDate(h.get('d') || days[days.length - 1].date);
   if (cur && h.get('c')) {
     const club = cur.clubs.find((c) => c.id === h.get('c'));

@@ -18,8 +18,12 @@ day's territory:
   from zoom 12.
 - **Interaction:** hover a cell for its club. Click a club in the list (or on
   the map) to highlight it and zoom to its territory.
+- **Changes:** tick *Show only changes since the previous day* to grey out
+  every cell the previous snapshot already had under the same club. Newly
+  claimed cells and cells that changed hands keep their club's colour and
+  labels, and the hover tip says *new* or *was \<club\>*.
 - **Navigation:** ◀ ▶ (or Alt+←/→) step through the days.
-- **Links:** the view is kept in the URL (`#d=<date>&c=<clubId>&m=<zoom>/<lat>/<lng>`),
+- **Links:** the view is kept in the URL (`#d=<date>&c=<clubId>&diff=1&m=<zoom>/<lat>/<lng>`),
   so links are shareable.
 
 It reads `index.json` and the daily files straight from the repo (via

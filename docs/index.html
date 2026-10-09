@@ -33,6 +33,7 @@
   .stats { color:var(--muted); font-size:12px; }
   .stats b { color:var(--fg); }
   .chk { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:12px; cursor:pointer; }
+  .chk:has(input:disabled) { opacity:.5; cursor:default; }
   #focus { font-size:12px; color:var(--muted); background:#10233a; border-radius:7px; padding:6px 8px; }
   #focus[hidden] { display:none; }
   #clubs { list-style:none; margin:0; padding:0; overflow:auto; flex:1; min-height:0; border-top:1px solid var(--line); }
@@ -81,6 +82,7 @@
       <button id="next" title="Next day">▶</button>
     </div>
     <div class="stats" id="totals">Loading…</div>
+    <label class="chk" id="diffLabel" data-title="Grey: cells the previous day already had under the same club. Colour: newly claimed, or changed hands."><input type="checkbox" id="diff" /> Show only changes since the previous day</label>
     <label class="chk"><input type="checkbox" id="grid" checked /> Show unclaimed grid (zoom 12+)</label>
     <input id="search" type="search" placeholder="Filter clubs…" />
     <div id="focus" hidden>Showing <b></b> only · <a href="#" id="unfocus">show all</a></div>
