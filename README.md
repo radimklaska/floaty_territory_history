@@ -28,8 +28,9 @@ day's territory:
 
 It reads `index.json` and the daily files straight from the repo (via
 `raw.githubusercontent.com`), so the published site stays tiny however long
-the history gets. To try it locally, serve the repo root and point it at the
-local data:
+the history gets. It is published by GitHub Pages from `docs/` on `main`, so
+a push to `main` deploys it (the build takes a minute or two). To try it
+locally, serve the repo root and point it at the local data:
 
 ```bash
 python3 -m http.server 8000   # then open http://localhost:8000/docs/?data=../
