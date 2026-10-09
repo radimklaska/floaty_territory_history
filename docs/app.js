@@ -4,8 +4,10 @@
 // time, and draws every claimed H3 cell on a canvas GridLayer: dots when
 // zoomed out, hexagons from HEX_ZOOM, one label per contiguous same-club patch
 // from LABEL_ZOOM, and the faint unclaimed grid from GRID_ZOOM. Click a club
-// (list or map) to highlight it; "show only changes" greys out every cell the
-// previous day already had under the same club. State lives in the URL hash:
+// (list or map) to highlight it. The previous day is loaded too, for the
+// change column of the club list and for "show only changes", which greys out
+// every cell the previous day already had under the same club. State lives in
+// the URL hash:
 //   #d=<date>&c=<clubId>&diff=1&m=<zoom>/<lat>/<lng>
 
 const { L, h3 } = window;
@@ -81,7 +83,9 @@ const ring = (h) => { let r = rings.get(h); if (!r) rings.set(h, (r = h3.cellToB
 let days = [];               // index.json entries, oldest first
 let cur = null;              // the prepared snapshot on screen
 let focus = null;            // highlighted club or null
-let diffPrev = null;         // the previous day's snapshot while "show only changes" is on, else null
+let prevSnap = null;         // the previous day's snapshot once loaded (null on the first day, or until it arrives)
+let diffPrev = null;         // prevSnap while "show only changes" is on, else null
+let deltas = new Map();      // club id -> cells gained (+) or lost (-) since the previous day
 const loaded = new Map();    // date -> prepared snapshot (a few kept)
 
 // clubs (biggest first) + h3 -> club + 1°×1° buckets of cells for tile queries
@@ -316,26 +320,57 @@ function coreBounds(cells) {
 }
 $('unfocus').onclick = (e) => { e.preventDefault(); setFocus(null, false); };
 
+// ---------- club list: sortable by name, cells, change ----------
+const SORT_KEYS = { name: false, cells: true, delta: true };  // column -> descending by default
+let sort = { by: 'cells', desc: true };                        // remembered across visits
+try { const s = JSON.parse(localStorage.getItem('fth.sort')); if (s && s.by in SORT_KEYS) sort = { by: s.by, desc: !!s.desc }; } catch {}
+function setSort(by) {                                         // the same column again flips the direction
+  sort = { by, desc: sort.by === by ? !sort.desc : SORT_KEYS[by] };
+  try { localStorage.setItem('fth.sort', JSON.stringify(sort)); } catch {}
+  renderClubs();
+}
+for (const b of $('cols').querySelectorAll('button')) b.onclick = () => setSort(b.dataset.sort);
+const primary = {                                              // ascending; the direction is applied on top
+  name: (a, b) => a.name.trim().localeCompare(b.name.trim(), undefined, { sensitivity: 'base' }),
+  cells: (a, b) => a.cells.length - b.cells.length,
+  delta: (a, b) => (deltas.get(a.id) || 0) - (deltas.get(b.id) || 0),
+};
+const tiebreak = (a, b) => b.cells.length - a.cells.length || a.name.localeCompare(b.name);
+
 function renderClubs() {
+  for (const b of $('cols').querySelectorAll('button')) {
+    const on = b.dataset.sort === sort.by;
+    b.classList.toggle('on', on);
+    b.textContent = b.dataset.label + (on ? (sort.desc ? ' ▾' : ' ▴') : '');
+  }
   const list = $('clubs');
   list.textContent = '';
   if (!cur) return;
+  const pending = !prevSnap && days.findIndex((d) => d.date === cur.date) > 0;   // the previous day is still loading
   const q = $('search').value.trim().toLowerCase();
+  const rows = cur.clubs.filter((c) => !q || c.name.toLowerCase().includes(q));
+  rows.sort((a, b) => (sort.desc ? -1 : 1) * primary[sort.by](a, b) || tiebreak(a, b));
   const frag = document.createDocumentFragment();
-  for (const club of cur.clubs) {
-    if (q && !club.name.toLowerCase().includes(q)) continue;
+  for (const club of rows) {
+    const d = deltas.get(club.id);                             // undefined until the previous day is in
+    const change = d === undefined ? (pending ? '…' : '') : d > 0 ? '+' + fmt(d) : fmt(d);
     const li = document.createElement('li');
     li.className = club === focus ? 'on' : '';
-    li.innerHTML = `<span class="sw" style="background:${esc(club.color)}"></span><span class="name">${esc(club.name)}</span><span class="n">${fmt(club.cells.length)}</span>`;
-    li.title = `${club.name} — ${fmt(club.cells.length)} cells`;
+    li.innerHTML = `<span class="sw" style="background:${esc(club.color)}"></span><span class="name">${esc(club.name)}</span>`
+      + `<span class="n">${fmt(club.cells.length)}</span><span class="d${d > 0 ? ' pos' : d < 0 ? ' neg' : ''}">${change}</span>`;
+    li.title = `${club.name} — ${fmt(club.cells.length)} cells` + (d === undefined ? '' : `, ${change} since ${prevSnap.date}`);
     li.onclick = () => setFocus(club === focus ? null : club, club !== focus);
     frag.appendChild(li);
   }
   list.appendChild(frag);
+  alignCols();
 }
+// keep the column headers clear of the list's scrollbar (which comes and goes with the layout)
+function alignCols() { const list = $('clubs'); $('cols').style.paddingRight = 4 + list.offsetWidth - list.clientWidth + 'px'; }
+window.addEventListener('resize', alignCols);
 $('search').addEventListener('input', renderClubs);
 $('grid').addEventListener('change', () => grid.redraw());
-$('diff').addEventListener('change', () => loadDate($('date').value));   // (re)loads the previous day as needed
+$('diff').addEventListener('change', () => setDiff($('diff').checked));
 
 function renderTotals() {
   const i = days.findIndex((d) => d.date === cur.date);
@@ -361,7 +396,6 @@ let loadToken = 0;
 async function loadSnap(entry) {                               // from the cache (kept most-recently-used), or fetched
   let snap = loaded.get(entry.date);
   if (!snap) {
-    $('totals').textContent = `Loading ${entry.date}…`;
     try {
       const r = await fetch(DATA + entry.file);
       if (!r.ok) throw new Error('HTTP ' + r.status);
@@ -375,32 +409,66 @@ async function loadSnap(entry) {                               // from the cache
   if (loaded.size > 4) loaded.delete(loaded.keys().next().value);
   return snap;
 }
-// show a day; with "show only changes" on, its previous day is loaded too
+// the previous day's snapshot (or null): the change column, and the grey cells in diff mode
+function setPrev(snap) {
+  prevSnap = snap;
+  diffPrev = snap && $('diff').checked ? snap : null;
+  deltas = new Map();
+  if (snap) {
+    const was = new Map(snap.clubs.map((c) => [c.id, c.cells.length]));
+    for (const c of cur.clubs) deltas.set(c.id, c.cells.length - (was.get(c.id) || 0));
+  }
+}
+function setDiff(on) {
+  $('diff').checked = on;
+  if (!cur) return;
+  setPrev(prevSnap);
+  renderTotals();
+  grid.redraw();
+  scheduleLabels();
+  writeHash();
+}
+// show a day. Its previous day is loaded too: before anything is drawn when
+// diff mode needs it for the grey, otherwise afterwards, for the change column.
 async function loadDate(date) {
   if (!days.length) return;
   let i = days.findIndex((d) => d.date === date);
   if (i < 0) i = days.length - 1;
-  const entry = days[i];
+  const entry = days[i], before = i > 0 ? days[i - 1] : null;
   const token = ++loadToken;
   $('date').value = entry.date;
-  let snap, before = null;
+  if (!loaded.has(entry.date)) $('totals').textContent = `Loading ${entry.date}…`;
+  let snap, early = null;
   try {
     snap = await loadSnap(entry);
-    if ($('diff').checked && i > 0) before = await loadSnap(days[i - 1]);   // read after the await: the box may have been ticked meanwhile
+    if (before && $('diff').checked) early = await loadSnap(before);   // read after the await: the box may have been ticked meanwhile
   } catch (e) {
     if (token === loadToken) $('totals').textContent = e.message;
     return;
   }
   if (token !== loadToken) return;
   cur = snap;
-  diffPrev = before;
   if (focus) focus = cur.clubs.find((c) => c.id === focus.id) || null;   // keep the highlight across days
   $('focus').hidden = !focus;
+  setPrev(early);
   renderTotals();
   renderClubs();
   grid.redraw();
   scheduleLabels();
   writeHash();
+  if (!before || early) return;
+  let late;
+  try {
+    late = await loadSnap(before);
+  } catch (e) {
+    if (token === loadToken) $('totals').insertAdjacentHTML('beforeend', `<br>${esc(e.message)}`);
+    return;
+  }
+  if (token !== loadToken) return;
+  setPrev(late);
+  renderTotals();
+  renderClubs();
+  if (diffPrev) { grid.redraw(); scheduleLabels(); }         // the box was ticked while it loaded
 }
 const step = (d) => {
   const i = days.findIndex((x) => x.date === cur?.date) + d;
@@ -438,10 +506,8 @@ window.addEventListener('hashchange', async () => {
   const { h, view } = hashView();
   if (view) map.setView([view.lat, view.lng], view.z);
   const diff = h.get('diff') === '1';
-  if ((h.get('d') && h.get('d') !== cur?.date) || diff !== $('diff').checked) {
-    $('diff').checked = diff;
-    await loadDate(h.get('d') || cur?.date);
-  }
+  if (h.get('d') && h.get('d') !== cur?.date) { $('diff').checked = diff; await loadDate(h.get('d')); }
+  else if (diff !== $('diff').checked) setDiff(diff);
   const club = h.get('c') ? cur?.clubs.find((c) => c.id === h.get('c')) : null;
   if ((club || null) !== focus) setFocus(club || null, !view);
 });

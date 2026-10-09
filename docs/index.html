@@ -36,13 +36,23 @@
   .chk:has(input:disabled) { opacity:.5; cursor:default; }
   #focus { font-size:12px; color:var(--muted); background:#10233a; border-radius:7px; padding:6px 8px; }
   #focus[hidden] { display:none; }
+  #table { display:flex; flex-direction:column; flex:1; min-height:0; }
+  .cols { display:flex; align-items:center; gap:8px; padding:0 4px; }
+  .cols .sw { width:10px; flex:none; }
+  .cols button { background:none; border-radius:0; padding:4px 0; font:600 10px system-ui,sans-serif; color:var(--muted);
+    text-transform:uppercase; text-align:left; white-space:nowrap; }
+  .cols button:hover, .cols button.on { color:var(--fg); }
+  .cols .name { flex:1; min-width:0; }
+  .cols .n, .cols .d { width:52px; text-align:right; flex:none; }
   #clubs { list-style:none; margin:0; padding:0; overflow:auto; flex:1; min-height:0; border-top:1px solid var(--line); }
   #clubs li { display:flex; align-items:center; gap:8px; padding:5px 4px; border-bottom:1px solid var(--line); cursor:pointer; font-size:13px; }
   #clubs li:hover { background:#1d2430; }
   #clubs li.on { background:#10233a; }
   #clubs .sw, .tip .sw, .hex-label .sw { width:10px; height:10px; border-radius:2px; flex:none; display:inline-block; }
   #clubs .name { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  #clubs .n { color:var(--muted); font:12px ui-monospace,monospace; }
+  #clubs .n, #clubs .d { color:var(--muted); font:12px ui-monospace,monospace; width:52px; text-align:right; flex:none; }
+  #clubs .d.pos { color:#3fb950; }
+  #clubs .d.neg { color:#f85149; }
   .hint { color:var(--muted); font-size:11px; margin:0; }
   #menu { position:absolute; top:10px; left:10px; z-index:1100; display:none; width:38px; height:36px; padding:0; font-size:17px; background:var(--panel); border:1px solid var(--line); }
   #app.collapsed #side { display:none; }
@@ -61,7 +71,7 @@
   @media (max-width: 700px) {
     #app { flex-direction:column; }
     #side { width:auto; flex:0 0 45%; border-right:0; border-bottom:1px solid var(--line); overflow:auto; }
-    #clubs { flex:none; overflow:visible; }
+    #table, #clubs { flex:none; overflow:visible; }
     .hint { display:none; }
   }
 </style>
@@ -86,7 +96,10 @@
     <label class="chk"><input type="checkbox" id="grid" checked /> Show unclaimed grid (zoom 12+)</label>
     <input id="search" type="search" placeholder="Filter clubs…" />
     <div id="focus" hidden>Showing <b></b> only · <a href="#" id="unfocus">show all</a></div>
-    <ol id="clubs"></ol>
+    <div id="table">
+      <div class="cols" id="cols"><span class="sw"></span><button class="name" data-sort="name" data-label="Club">Club</button><button class="n" data-sort="cells" data-label="Cells">Cells</button><button class="d" data-sort="delta" data-label="Change" title="Cells gained or lost since the previous day">Change</button></div>
+      <ol id="clubs"></ol>
+    </div>
     <p class="hint">Click a club (or a hexagon) to highlight it. Zoomed out, each cell is a dot; hexagons from zoom 9, club labels from 10, unclaimed grid from 12.</p>
   </aside>
   <div id="map"></div>
