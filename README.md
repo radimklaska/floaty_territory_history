@@ -25,6 +25,9 @@ day's territory:
   claimed cells and cells that changed hands keep their club's colour and
   labels, and the hover tip says *new* or *was \<club\>*.
 - **Navigation:** ◀ ▶ (or Alt+←/→) step through the days.
+- **My location:** the ⌖ button under the zoom buttons shows where you are (a
+  dot with its accuracy circle, kept up to date while it's on) and brings the
+  map there. The position is never stored or put in the URL.
 - **Links:** the view is kept in the URL (`#d=<date>&c=<clubId>&diff=1&m=<zoom>/<lat>/<lng>`),
   so links are shareable.
 

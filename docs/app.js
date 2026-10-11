@@ -6,8 +6,9 @@
 // from LABEL_ZOOM, and the faint unclaimed grid from GRID_ZOOM. Click a club
 // (list or map) to highlight it. The previous day is loaded too, for the
 // change column of the club list and for "show only changes", which greys out
-// every cell the previous day already had under the same club. State lives in
-// the URL hash:
+// every cell the previous day already had under the same club. A button under
+// the zoom control shows the visitor's own location. State lives in the URL
+// hash (the location never does):
 //   #d=<date>&c=<clubId>&diff=1&m=<zoom>/<lat>/<lng>
 
 const { L, h3 } = window;
@@ -61,6 +62,70 @@ try { if (baseLayers[localStorage.getItem('fth.base')]) baseName = localStorage.
 baseLayers[baseName].addTo(map);
 L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
 map.on('baselayerchange', (e) => { try { localStorage.setItem('fth.base', e.name); } catch {} });
+
+// ---------- "show my location" ----------
+// A toggle under the zoom buttons. While on, the browser's geolocation is
+// watched and drawn as a dot with its accuracy circle; the first fix brings the
+// map there. The position is never stored or put in the URL.
+const LOC_ZOOM = 13;                               // a neighbourhood of hexagons around you
+const LOC_COLOR = '#1a73e8';
+const LOC_ERRORS = {
+  0: "This browser can't report your location.",
+  1: "Location access was denied. Allow it for this site in the browser's settings and try again.",
+  2: "Couldn't determine your location.",
+  3: "Couldn't get a fix in time. Try again, ideally outdoors.",
+};
+const meRing = L.circle([0, 0], { radius: 1, color: LOC_COLOR, weight: 1, opacity: 0.6, fillOpacity: 0.12, interactive: false });
+const meDot = L.circleMarker([0, 0], { radius: 7, color: '#fff', weight: 2, fillColor: LOC_COLOR, fillOpacity: 1, interactive: false });
+const me = L.layerGroup([meRing, meDot]);
+let locating = false, firstFix = false, locBtn;
+const Locate = L.Control.extend({
+  onAdd() {
+    const bar = L.DomUtil.create('div', 'leaflet-bar');
+    locBtn = L.DomUtil.create('a', 'locate', bar);
+    locBtn.href = '#';
+    locBtn.setAttribute('role', 'button');
+    locBtn.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="7"/>'
+      + '<circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/><path d="M12 1v4M12 19v4M1 12h4M19 12h4"/></svg>';
+    L.DomEvent.disableClickPropagation(bar);
+    L.DomEvent.on(locBtn, 'click', (e) => { L.DomEvent.preventDefault(e); setLocate(!locating); });   // "#" would wipe the hash state
+    setLocate(false);
+    return bar;
+  },
+});
+new Locate({ position: 'topleft' }).addTo(map);
+function setLocate(on) {
+  if (on && !window.isSecureContext) { toast('Location is only available over https.'); return; }
+  locating = firstFix = on;
+  locBtn.classList.toggle('on', on);
+  locBtn.classList.toggle('busy', on);
+  locBtn.setAttribute('aria-pressed', on);
+  locBtn.title = on ? 'Hide my location' : 'Show my location';
+  locBtn.setAttribute('aria-label', locBtn.title);
+  if (on) map.locate({ watch: true, enableHighAccuracy: true, timeout: 20_000 });
+  else { map.stopLocate(); map.removeLayer(me); }
+}
+map.on('locationfound', (e) => {
+  if (!locating) return;
+  locBtn.classList.remove('busy');
+  meRing.setLatLng(e.latlng).setRadius(e.accuracy);
+  meDot.setLatLng(e.latlng);
+  if (!map.hasLayer(me)) me.addTo(map);
+  if (firstFix) { firstFix = false; map.fitBounds(e.bounds, { maxZoom: Math.max(map.getZoom(), LOC_ZOOM) }); }
+});
+map.on('locationerror', (e) => {
+  if (!locating) return;
+  if (e.code !== 1 && !firstFix) { locBtn.classList.add('busy'); return; }   // signal lost after a fix: keep the last position while the watch retries
+  setLocate(false);
+  toast(LOC_ERRORS[e.code] || LOC_ERRORS[2]);
+});
+let toastTimer = 0;
+function toast(msg) {
+  $('toast').textContent = msg;
+  $('toast').hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, 6000);
+}
 
 // ---------- collapsible panel ----------
 const appEl = $('app');

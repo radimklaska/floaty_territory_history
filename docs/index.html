@@ -59,6 +59,17 @@
   #app.collapsed #side { display:none; }
   #app.collapsed #menu { display:block; }
   #app.collapsed .leaflet-top.leaflet-left { margin-top:44px; }
+  /* "show my location": a toggle under the zoom buttons; blue while on, pulsing while waiting for a fix */
+  .leaflet-bar a.locate { display:flex; align-items:center; justify-content:center; }
+  .leaflet-bar a.locate svg { width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; }
+  .leaflet-bar a.locate.on { color:#1a73e8; }
+  .leaflet-bar a.locate.busy svg { animation:pulse .8s ease-in-out infinite alternate; }
+  @keyframes pulse { to { opacity:.25; } }
+  /* short messages over the map, e.g. why locating failed */
+  #toast { position:absolute; left:50%; bottom:28px; transform:translateX(-50%); z-index:1200; max-width:min(92%, 440px); pointer-events:none;
+    background:rgba(8,12,18,.9); color:var(--fg); border:1px solid rgba(255,255,255,.14); border-radius:8px; padding:8px 12px;
+    font:13px/1.4 system-ui,sans-serif; text-align:center; }
+  #toast[hidden] { display:none; }
   /* territory labels + hover tip */
   .hex-label { background:none; border:0; }
   .hex-label .chip, .leaflet-tooltip.tip { display:inline-flex; align-items:center; gap:5px; background:rgba(8,12,18,.84); color:var(--fg);
@@ -103,7 +114,7 @@
     </div>
     <p class="hint">Click a club (or a hexagon) to highlight it. Zoomed out, each cell is a dot; hexagons from zoom 9, club labels from 10, unclaimed grid from 12.</p>
   </aside>
-  <div id="map"></div>
+  <div id="map"><div id="toast" hidden></div></div>
 </div>
 <script type="module" src="app.js"></script>
 </body>
