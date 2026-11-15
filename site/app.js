@@ -5,7 +5,7 @@
 // zoomed out, hexagons from HEX_ZOOM, one label per contiguous same-club patch
 // from LABEL_ZOOM, and the faint unclaimed grid from GRID_ZOOM. Click a club
 // (list or map) to highlight it. The previous day is loaded too, for the
-// change column of the club list and for "show only changes", which greys out
+// gained / lost / change columns of the club list and for "show only changes", which greys out
 // every cell the previous day already had under the same club. A button under
 // the zoom control shows the visitor's own location. State lives in the URL
 // hash (the location never does):
@@ -150,7 +150,7 @@ let cur = null;              // the prepared snapshot on screen
 let focus = null;            // highlighted club or null
 let prevSnap = null;         // the previous day's snapshot once loaded (null on the first day, or until it arrives)
 let diffPrev = null;         // prevSnap while "show only changes" is on, else null
-let deltas = new Map();      // club id -> cells gained (+) or lost (-) since the previous day
+let deltas = new Map();      // club id -> { gained, lost, net } cells since the previous day (net = gained - lost)
 const loaded = new Map();    // date -> prepared snapshot (a few kept)
 
 // clubs (biggest first) + h3 -> club + 1°×1° buckets of cells for tile queries
@@ -385,8 +385,8 @@ function coreBounds(cells) {
 }
 $('unfocus').onclick = (e) => { e.preventDefault(); setFocus(null, false); };
 
-// ---------- club list: sortable by name, cells, change ----------
-const SORT_KEYS = { name: false, cells: true, delta: true };  // column -> descending by default
+// ---------- club list: sortable by name, cells, gained, lost, change ----------
+const SORT_KEYS = { name: false, cells: true, gained: true, lost: true, delta: true };  // column -> descending by default
 let sort = { by: 'cells', desc: true };                        // remembered across visits
 try { const s = JSON.parse(localStorage.getItem('fth.sort')); if (s && s.by in SORT_KEYS) sort = { by: s.by, desc: !!s.desc }; } catch {}
 function setSort(by) {                                         // the same column again flips the direction
@@ -398,7 +398,9 @@ for (const b of $('cols').querySelectorAll('button')) b.onclick = () => setSort(
 const primary = {                                              // ascending; the direction is applied on top
   name: (a, b) => a.name.trim().localeCompare(b.name.trim(), undefined, { sensitivity: 'base' }),
   cells: (a, b) => a.cells.length - b.cells.length,
-  delta: (a, b) => (deltas.get(a.id) || 0) - (deltas.get(b.id) || 0),
+  gained: (a, b) => (deltas.get(a.id)?.gained || 0) - (deltas.get(b.id)?.gained || 0),
+  lost: (a, b) => (deltas.get(a.id)?.lost || 0) - (deltas.get(b.id)?.lost || 0),
+  delta: (a, b) => (deltas.get(a.id)?.net || 0) - (deltas.get(b.id)?.net || 0),
 };
 const tiebreak = (a, b) => b.cells.length - a.cells.length || a.name.localeCompare(b.name);
 
@@ -418,12 +420,18 @@ function renderClubs() {
   const frag = document.createDocumentFragment();
   for (const club of rows) {
     const d = deltas.get(club.id);                             // undefined until the previous day is in
-    const change = d === undefined ? (pending ? '…' : '') : d > 0 ? '+' + fmt(d) : fmt(d);
+    const none = pending ? '…' : '';
+    const signed = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + fmt(Math.abs(n));
+    const cls = (n) => (n > 0 ? ' pos' : n < 0 ? ' neg' : '');
     const li = document.createElement('li');
     li.className = club === focus ? 'on' : '';
     li.innerHTML = `<span class="sw" style="background:${esc(club.color)}"></span><span class="name">${esc(club.name)}</span>`
-      + `<span class="n">${fmt(club.cells.length)}</span><span class="d${d > 0 ? ' pos' : d < 0 ? ' neg' : ''}">${change}</span>`;
-    li.title = `${club.name} — ${fmt(club.cells.length)} cells` + (d === undefined ? '' : `, ${change} since ${prevSnap.date}`);
+      + `<span class="n">${fmt(club.cells.length)}</span>`
+      + (d === undefined ? `<span class="g">${none}</span><span class="l">${none}</span><span class="d">${none}</span>`
+        : `<span class="g${cls(d.gained)}">${signed(d.gained)}</span><span class="l${cls(-d.lost)}">${signed(-d.lost)}</span>`
+          + `<span class="d${cls(d.net)}">${signed(d.net)}</span>`);
+    li.title = `${club.name} — ${fmt(club.cells.length)} cells`
+      + (d === undefined ? '' : `; since ${prevSnap.date}: ${fmt(d.gained)} gained, ${fmt(d.lost)} lost, ${signed(d.net)} net`);
     li.onclick = () => setFocus(club === focus ? null : club, club !== focus);
     frag.appendChild(li);
   }
@@ -480,8 +488,11 @@ function setPrev(snap) {
   diffPrev = snap && $('diff').checked ? snap : null;
   deltas = new Map();
   if (snap) {
-    const was = new Map(snap.clubs.map((c) => [c.id, c.cells.length]));
-    for (const c of cur.clubs) deltas.set(c.id, c.cells.length - (was.get(c.id) || 0));
+    // per cell, so a club that took 5 cells and lost 5 others shows +5 / −5, not just 0
+    for (const c of cur.clubs) deltas.set(c.id, { gained: 0, lost: 0, net: 0 });
+    for (const [h, club] of cur.cellClub) { const was = snap.cellClub.get(h); if (!was || was.id !== club.id) deltas.get(club.id).gained++; }
+    for (const [h, club] of snap.cellClub) { const d = deltas.get(club.id); if (d && cur.cellClub.get(h)?.id !== club.id) d.lost++; }
+    for (const d of deltas.values()) d.net = d.gained - d.lost;
   }
 }
 function setDiff(on) {

@@ -18,8 +18,10 @@ day's territory:
   from zoom 12.
 - **Interaction:** hover a cell for its club. Click a club in the list (or on
   the map) to highlight it and zoom to its territory.
-- **Club list:** every club with its cells and the change since the previous
-  day; click a column header to sort by name, cells or change.
+- **Club list:** every club with its cells and, since the previous day, the
+  cells it gained (newly claimed or taken from another club), the cells it
+  lost, and the net change (gained − lost); click a column header to sort by
+  any of them.
 - **Changes:** tick *Show only changes since the previous day* to grey out
   every cell the previous snapshot already had under the same club. Newly
   claimed cells and cells that changed hands keep their club's colour and
