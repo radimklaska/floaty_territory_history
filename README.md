@@ -101,6 +101,21 @@ diffs stay readable. Files over 1 MB show as "View raw" on GitHub.
 - **`unnamed`** holds claimed cells whose club the tiles didn't name, grouped by
   colour. Normally empty or a handful.
 
+`changes.json` holds, for every cell ever claimed, the dates its owner changed:
+claimed, taken by another club, or unclaimed. A date is the first snapshot that
+showed the change, and a cell whose only date is `first` has kept its owner
+since the first snapshot or earlier:
+
+```json
+{
+  "first": "2026-10-08",
+  "last": "2026-11-15",
+  "cells": {
+    "881e037aa1fffff": ["2026-10-08", "2026-10-11", "2026-10-16", "2026-10-18", "2026-11-07"]
+  }
+}
+```
+
 Quick look with `jq`:
 
 ```bash
@@ -125,6 +140,8 @@ each hour.
 3. maps each polygon back to its H3 index (from its centroid) and writes the
    snapshot. If any tile fails after 3 attempts, nothing is written and the
    run fails.
+4. updates `index.json` and rebuilds `changes.json` from all the daily files
+   (`changes.js`).
 
 That's about 2,800 requests and 7 MB once a day.
 
