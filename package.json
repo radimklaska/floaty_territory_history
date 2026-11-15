@@ -15,5 +15,8 @@
     "@mapbox/vector-tile": "^2.0.5",
     "h3-js": "^4.5.0",
     "pbf": "^4.0.2"
+  },
+  "devDependencies": {
+    "wrangler": "4.159.0"
   }
 }

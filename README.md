@@ -9,9 +9,9 @@ A GitHub Action takes a snapshot every day at 00:17 UTC and commits it here.
 
 ## Web map
 
-**Live: <https://klaska.net/floaty_territory_history/>**
+**Live: <https://floaty.klaska.net/>**
 
-`docs/` is a small static page (Leaflet + h3-js, no build step) that draws any
+`site/` is a small static page (Leaflet + h3-js, no build step) that draws any
 day's territory:
 - **Zoom levels:** cells are dots when zoomed out, hexagons from zoom 9, one
   label per contiguous club patch from zoom 10, and the faint unclaimed grid
@@ -33,12 +33,23 @@ day's territory:
 
 It reads `index.json` and the daily files straight from the repo (via
 `raw.githubusercontent.com`), so the published site stays tiny however long
-the history gets. It is published by GitHub Pages from `docs/` on `main`, so
-a push to `main` deploys it (the build takes a minute or two). To try it
-locally, serve the repo root and point it at the local data:
+the history gets, and a daily snapshot needs no deploy.
+
+It is hosted on Cloudflare as an assets-only Worker (`wrangler.jsonc`, custom
+domain `floaty.klaska.net`; response headers incl. the CSP in `site/_headers`).
+`.github/workflows/deploy.yml` deploys it on every push to `main` that touches
+`site/` or the Worker config, and uploads a `workers.dev` preview for pull
+requests. It needs the repo secrets `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID`. By hand: `npm ci && npx wrangler deploy`.
+
+The old address, `klaska.net/floaty_territory_history/`, is still GitHub Pages
+(from `docs/` on `main`), which now holds only a page that redirects to
+floaty.klaska.net, keeping the `#…` link state.
+
+To try it locally, serve the repo root and point it at the local data:
 
 ```bash
-python3 -m http.server 8000   # then open http://localhost:8000/docs/?data=../
+python3 -m http.server 8000   # then open http://localhost:8000/site/?data=../
 ```
 
 ## Files
@@ -48,6 +59,8 @@ python3 -m http.server 8000   # then open http://localhost:8000/docs/?data=../
 | `daily/YYYY/YYYY-MM-DD.json` | the snapshot for that day (UTC date of the run) |
 | `latest.json` | the newest snapshot; `git log -p latest.json` is a day-by-day diff of which cells changed hands |
 | `index.json` | every day on file with its totals (the web map's date list) |
+| `site/` | the web map |
+| `docs/` | redirect from the old GitHub Pages address |
 
 Each file is pretty-printed, with clubs sorted by id and one cell per line, so
 diffs stay readable. Files over 1 MB show as "View raw" on GitHub.

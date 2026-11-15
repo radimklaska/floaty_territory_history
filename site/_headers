@@ -1,0 +1,15 @@
+# Cloudflare Workers static assets: response headers (not served as a file).
+# Third parties the page needs: Leaflet and h3-js from unpkg (pinned, with SRI),
+# map tiles from OSM, Esri and CyclOSM, and the snapshots from
+# raw.githubusercontent.com. The zone injects the Cloudflare Web Analytics
+# beacon (script from static.cloudflareinsights.com, reports to
+# cloudflareinsights.com). Inline styles are needed: the <style> block and the
+# colour swatches app.js renders. Geolocation stays allowed for the ⌖ button.
+/*
+  Content-Security-Policy: default-src 'none'; script-src 'self' https://unpkg.com https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data: https://unpkg.com https://*.tile.openstreetmap.org https://server.arcgisonline.com https://*.tile-cyclosm.openstreetmap.fr; connect-src 'self' https://raw.githubusercontent.com https://cloudflareinsights.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; upgrade-insecure-requests
+  Strict-Transport-Security: max-age=31536000
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=(self), payment=(), usb=()
+  Cross-Origin-Opener-Policy: same-origin

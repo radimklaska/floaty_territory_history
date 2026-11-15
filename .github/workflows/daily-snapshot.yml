@@ -24,7 +24,7 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - run: npm ci
+      - run: npm ci --omit=dev   # wrangler (devDependency) is only for the site deploy
       - run: npm test
       - name: Take snapshot
         run: node snapshot.js

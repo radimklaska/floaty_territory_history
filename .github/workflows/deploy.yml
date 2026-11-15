@@ -1,0 +1,99 @@
+name: Deploy web map
+
+# Deploys site/ to Cloudflare (assets-only Worker, see wrangler.jsonc).
+#   push to main touching the site -> production (floaty.klaska.net)
+#   pull request -> a preview version on workers.dev (noindex), linked in one PR comment
+# The daily snapshots don't deploy: the page reads them from raw.githubusercontent.com.
+#
+# Secrets: CLOUDFLARE_API_TOKEN (deploy token: Workers Scripts Edit + Account
+# Settings Read on the account, Workers Routes Edit + Zone Read on klaska.net),
+# CLOUDFLARE_ACCOUNT_ID.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - 'wrangler.jsonc'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy.yml'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  # One production deploy at a time; previews per PR.
+  group: deploy-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Fork PRs get no secrets, so they cannot be previewed.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write # the preview-links comment
+    env:
+      IS_PR: ${{ github.event_name == 'pull_request' }}
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install wrangler
+        run: npm ci --no-audit --no-fund
+
+      - name: Deploy to production
+        if: env.IS_PR != 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npx wrangler deploy
+
+      - name: Upload a preview version
+        if: env.IS_PR == 'true'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR: ${{ github.event.number }}
+        run: |
+          npx wrangler versions upload --preview-alias "pr-$PR" | tee upload.log
+          grep -E 'Preview (Alias )?URL' upload.log >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Post the preview links on the PR
+        if: env.IS_PR == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          alias_url=$(grep -E '^Version Preview Alias URL: ' upload.log | awk '{print $NF}')
+          version_url=$(grep -E '^Version Preview URL: ' upload.log | awk '{print $NF}')
+          marker='<!-- preview-links -->'
+          # shellcheck disable=SC2016 # literal backticks are Markdown
+          body=$(printf '%s\n**Preview of this PR:** %s\nThis commit (`%s`): %s\nProduction is unchanged until the PR is merged. Previews are noindex.' \
+            "$marker" "$alias_url" "${SHA:0:7}" "$version_url")
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" > /dev/null
+          else
+            gh pr comment "$PR" --repo "$REPO" --body "$body"
+          fi

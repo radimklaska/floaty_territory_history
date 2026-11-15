@@ -1,0 +1,23 @@
+// floaty.klaska.net: an assets-only Worker serving the web map (site/). No Worker
+// script, so every request is a free static-asset request and site/_headers
+// applies to all responses. The snapshot data is not deployed: the page reads it
+// from raw.githubusercontent.com, so daily snapshots need no deploy.
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "floaty-territory-history",
+  "compatibility_date": "2026-11-15",
+
+  // Production is the custom domain only. Per-PR previews stay on workers.dev,
+  // where Cloudflare adds X-Robots-Tag: noindex automatically.
+  "workers_dev": false,
+  "preview_urls": true,
+
+  // Cloudflare owns this hostname's DNS record and certificate.
+  "routes": [{ "pattern": "floaty.klaska.net", "custom_domain": true }],
+
+  "assets": {
+    "directory": "./site",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  }
+}

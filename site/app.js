@@ -25,7 +25,7 @@ const GRID_ZOOM = 12;        // a cell is ~40 px wide here
 const PAD_KM = 0.7;          // > a cell's circumradius (~0.53 km)
 const GREY = '#8a94a3';      // greyed-out cells: other clubs while one is selected, unchanged cells in diff mode
 
-// GitHub Pages serves only docs/; the snapshots are read from the repo itself
+// Only site/ is deployed; the snapshots are read from the repo itself
 // (raw.githubusercontent.com allows cross-origin reads). ?data=<path> points at
 // a copy on the page's own origin, e.g. ?data=../ when serving the repo root
 // locally — never another site, so a crafted link can't feed the page data.
