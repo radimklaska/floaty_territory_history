@@ -379,38 +379,56 @@ function drawLabels() {
   }
 }
 
-// ---------- diff mode, zoomed out: changed cells gathered into markers ----------
-// A changed cell is a dot of a pixel or two below CLUMP_ZOOM, lost among the grey
-// ones. Each marker gathers the changed cells near it on screen: the count in the
-// middle, a ring split by club, the clubs on hover, and a click zooms in on them.
+// ---------- zoomed out: the cells in colour gathered into markers ----------
+// Below CLUMP_ZOOM a cell is a dot of a pixel or two, lost among the grey ones.
+// In diff mode the changed cells, and with a club selected (diff mode or not)
+// that club's cells, are gathered into markers: each takes the cells near it on
+// screen, with the count in the middle, a ring split by club, the clubs on
+// hover, and a click zooms in on them.
 map.createPane('clumpPane').style.zIndex = 370;
 const clumps = L.layerGroup().addTo(map);
 function drawClumps() {
   clumps.clearLayers();
-  if (!cur || !diffPrev || map.getZoom() >= CLUMP_ZOOM) return;
+  if (!cur || (!diffPrev && !focus) || map.getZoom() >= CLUMP_ZOOM) return;
   const box = padded(map.getBounds(), 200);
   const changed = cellsIn(box).filter((h) => !dimmed(h, cur.cellClub.get(h)));
   const gone = lostIn(box);                                    // a selected club's lost cells: their own red share
   if (changed.length + gone.length > 20_000) return;
   const isLost = new Set(gone);
-  const groups = [];
+  const size = (n) => Math.round(Math.min(44, 20 + 4 * Math.log2(n)));   // marker width: 20 px for one cell
+  const groups = [];                                           // { x, y: first cell, sx, sy: sums for the centre, cells }
   for (const h of [...changed, ...gone]) {
     const p = map.latLngToLayerPoint(centre(h));
     let g = groups.find((q) => Math.abs(q.x - p.x) < CLUMP_PX && Math.abs(q.y - p.y) < CLUMP_PX);
-    if (!g) groups.push((g = { x: p.x, y: p.y, cells: [] }));
-    g.cells.push(h);
+    if (!g) groups.push((g = { x: p.x, y: p.y, sx: 0, sy: 0, cells: [] }));
+    g.cells.push(h); g.sx += p.x; g.sy += p.y;
+  }
+  // a marker sits at its cells' centre and grows with the count: merge any two
+  // that would touch, until none do
+  for (let merged = true; merged;) {
+    merged = false;
+    for (let i = 0; i < groups.length; i++) {
+      const a = groups[i];
+      for (let j = groups.length - 1; j > i; j--) {
+        const b = groups[j], na = a.cells.length, nb = b.cells.length;
+        if (Math.hypot(a.sx / na - b.sx / nb, a.sy / na - b.sy / nb) >= (size(na) + size(nb)) / 2 + 4) continue;
+        for (const h of b.cells) a.cells.push(h);
+        a.sx += b.sx; a.sy += b.sy;
+        groups.splice(j, 1);
+        merged = true;
+      }
+    }
   }
   for (const g of groups) {
     const byClub = new Map();                                  // club -> { n: new, t: taken from another club }
-    let lat = 0, lng = 0, lostN = 0, lostTo = 0;
+    let lostN = 0, lostTo = 0;
     for (const h of g.cells) {
-      const c = centre(h);
-      lat += c[0]; lng += c[1];
       if (isLost.has(h)) { lostN++; if (cur.cellClub.has(h)) lostTo++; continue; }
       const club = cur.cellClub.get(h);
       let e = byClub.get(club);
       if (!e) byClub.set(club, (e = { n: 0, t: 0 }));
-      if (diffPrev.cellClub.has(h)) e.t++; else e.n++;
+      if (!diffPrev) e.n++;                                    // not diff mode: just the selected club's cells
+      else if (diffPrev.cellClub.has(h)) e.t++; else e.n++;
     }
     const n = g.cells.length;
     const clubs = [...byClub].sort((a, b) => b[1].n + b[1].t - a[1].n - a[1].t);
@@ -420,18 +438,21 @@ function drawClumps() {
       return `${club.color} ${from.toFixed(1)}% ${at.toFixed(1)}%`;
     });
     if (lostN) stops.push(`${LOST} ${at.toFixed(1)}% 100%`);
-    const d = Math.round(Math.min(44, 20 + 4 * Math.log2(n)));   // 20 px for one cell
-    const marker = L.marker([lat / n, lng / n], {
+    const d = size(n);
+    const cx = g.sx / n, cy = g.sy / n;                        // on the cell nearest the group's centre, so it never floats over empty land
+    let at0 = g.cells[0], best = Infinity;
+    for (const h of g.cells) { const q = map.latLngToLayerPoint(centre(h)), dd = (q.x - cx) ** 2 + (q.y - cy) ** 2; if (dd < best) { best = dd; at0 = h; } }
+    const marker = L.marker(centre(at0), {
       pane: 'clumpPane', keyboard: false, riseOnHover: true,
       icon: L.divIcon({ className: 'clump', iconSize: [d, d],
         html: `<span class="ring" style="background:conic-gradient(${esc(stops.join(','))})"></span><span class="c">${fmt(n)}</span>` }),
     });
     const rows = clubs.slice(0, 6).map(([club, e]) => `<div><span class="sw" style="background:${esc(club.color)}"></span>${esc(club.name)}`
-      + ` <span class="n">${[e.n && `${fmt(e.n)} new`, e.t && `${fmt(e.t)} taken`].filter(Boolean).join(', ')}</span></div>`);
+      + (diffPrev ? ` <span class="n">${[e.n && `${fmt(e.n)} new`, e.t && `${fmt(e.t)} taken`].filter(Boolean).join(', ')}</span>` : '') + '</div>');
     if (clubs.length > 6) rows.push(`<div class="n">+${clubs.length - 6} more clubs</div>`);
     if (lostN) rows.push(`<div><span class="sw" style="background:${LOST}"></span>lost by ${esc(focus.name)} <span class="n">`
       + [lostTo && `${fmt(lostTo)} taken by others`, lostN - lostTo && `${fmt(lostN - lostTo)} unclaimed now`].filter(Boolean).join(', ') + '</span></div>');
-    marker.bindTooltip(`<b>${fmt(n)} changed cell${n === 1 ? '' : 's'}</b>${rows.join('')}`,
+    marker.bindTooltip(`<b>${fmt(n)} ${diffPrev ? 'changed ' : ''}cell${n === 1 ? '' : 's'}</b>${rows.join('')}`,
       { direction: 'top', offset: [0, -d / 2], className: 'tip clump-tip', opacity: 1 });
     marker.on('click', () => map.fitBounds(L.latLngBounds(g.cells.map(centre)).pad(0.5), { maxZoom: 12 }));
     marker.addTo(clumps);

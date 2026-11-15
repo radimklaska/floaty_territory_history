@@ -19,6 +19,9 @@ day's territory:
 - **Interaction:** hover a cell for its club and the date it last changed
   hands (from `changes.json`, loaded on the first hover). Click a club in the list (or on
   the map) to highlight it and zoom to its territory.
+  Zoomed out (below zoom 10), the selected club's cells are gathered into
+  numbered markers, one even for a lone cell, so outposts are easy to find;
+  hover for the count, click to zoom in.
 - **Club list:** every club with its cells and, since the previous day, the
   cells it gained (newly claimed or taken from another club), the cells it
   lost, and the net change (gained − lost); click a column header to sort by
