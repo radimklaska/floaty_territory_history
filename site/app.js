@@ -9,7 +9,8 @@
 // every cell the previous day already had under the same club; zoomed out, the
 // changed cells are also gathered into numbered markers, and with a club selected
 // the cells it lost are drawn in red. A button under
-// the zoom control shows the visitor's own location. State lives in the URL
+// the zoom control shows the visitor's own location. Hovering a cell says when it last
+// changed hands (changes.json). State lives in the URL
 // hash (the location never does):
 //   #d=<date>&c=<clubId>&diff=1&m=<zoom>/<lat>/<lng>
 
@@ -441,14 +442,37 @@ function drawClumps() {
 const tip = L.tooltip({ direction: 'top', offset: [0, -6], className: 'tip', opacity: 1 });
 const cellAt = (latlng) => (cur && map.getZoom() >= HEX_ZOOM ? h3.latLngToCell(latlng.lat, latlng.lng, RES) : null);
 const clubAt = (latlng) => { const h = cellAt(latlng); return h ? cur.cellClub.get(h) : null; };
+
+// when a cell last changed hands, from changes.json (per cell, the dates its
+// owner changed; built from all the daily files). Loaded on the first hover.
+let changes = null, changesLoad = null, lastHover = null;
+function loadChanges() {
+  changesLoad ??= fetch(DATA + 'changes.json')
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((doc) => { changes = doc; if (lastHover) onHover(lastHover, true); })
+    .catch(() => { changes = { cells: {} }; });               // no history: the line just says "unknown"
+}
+function lastChange(h) {
+  if (!changes) { loadChanges(); return '<span class="when">last change: …</span>'; }
+  const dates = changes.cells?.[h] || [];
+  let d = null;                                                // the latest change on or before the day shown
+  for (const x of dates) if (x <= cur.date) d = x;
+  if (!d) return '<span class="when">last change: unknown</span>';
+  if (d === changes.first) return `<span class="when">last change: ${esc(d)} or earlier (first snapshot)</span>`;
+  const ago = Math.round((Date.parse(cur.date) - Date.parse(d)) / 864e5);
+  return `<span class="when">last change: ${esc(d)}${ago ? ` (${ago} day${ago === 1 ? '' : 's'} before)` : ' (this day)'}</span>`;
+}
+
 let hoverAt = 0;
-map.on('mousemove', (e) => {
+map.on('mousemove', (e) => onHover(e));
+function onHover(e, force) {
   const t = performance.now();
-  if (t - hoverAt < 50) return;
+  if (!force && t - hoverAt < 50) return;
   hoverAt = t;
+  lastHover = e;
   const h = cellAt(e.latlng), club = h && cur.cellClub.get(h);
   if (!club && h && lost().set.has(h)) {                       // a selected club's lost cell, unclaimed now
-    tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${LOST}"></span><b>lost by ${esc(focus.name)}</b> <span class="n">unclaimed now</span>`);
+    tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${LOST}"></span><b>lost by ${esc(focus.name)}</b> <span class="n">unclaimed now</span>${lastChange(h)}`);
     if (!map.hasLayer(tip)) tip.addTo(map);
     return;
   }
@@ -456,10 +480,10 @@ map.on('mousemove', (e) => {
   let change = '';                                             // diff mode: how the cell differs from the previous day
   if (diffPrev) { const was = diffPrev.cellClub.get(h); change = !was ? ' · new' : was.id !== club.id ? ` · was ${esc(was.name)}` : ''; }
   if (lost().set.has(h)) change += ' · <b class="lost">lost</b>';
-  tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${esc(club.color)}"></span><b>${esc(club.name)}</b> <span class="n">${fmt(club.cells.length)} cells${change}</span>`);
+  tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${esc(club.color)}"></span><b>${esc(club.name)}</b> <span class="n">${fmt(club.cells.length)} cells${change}</span>${lastChange(h)}`);
   if (!map.hasLayer(tip)) tip.addTo(map);
-});
-map.on('mouseout', () => map.closeTooltip(tip));
+}
+map.on('mouseout', () => { lastHover = null; map.closeTooltip(tip); });
 map.on('click', (e) => {
   if (map.getZoom() < HEX_ZOOM) return;
   const club = clubAt(e.latlng);

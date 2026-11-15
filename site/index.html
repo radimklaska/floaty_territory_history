@@ -80,6 +80,8 @@
   .leaflet-tooltip.tip { box-shadow:none; }
   .leaflet-tooltip-top.tip::before { border-top-color:rgba(8,12,18,.84); }
   .tip .n { color:var(--muted); font-weight:400; }
+  .leaflet-tooltip.tip:has(.when) { flex-wrap:wrap; }
+  .tip .when { flex-basis:100%; color:var(--muted); font-weight:400; }
   .lost { color:#ff6b62; }
   /* diff mode, zoomed out: a marker per group of changed cells, its ring split by club */
   .clump { background:none; border:0; cursor:pointer; }

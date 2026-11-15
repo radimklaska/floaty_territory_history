@@ -16,7 +16,8 @@ day's territory:
 - **Zoom levels:** cells are dots when zoomed out, hexagons from zoom 9, one
   label per contiguous club patch from zoom 10, and the faint unclaimed grid
   from zoom 12.
-- **Interaction:** hover a cell for its club. Click a club in the list (or on
+- **Interaction:** hover a cell for its club and the date it last changed
+  hands (from `changes.json`, loaded on the first hover). Click a club in the list (or on
   the map) to highlight it and zoom to its territory.
 - **Club list:** every club with its cells and, since the previous day, the
   cells it gained (newly claimed or taken from another club), the cells it
@@ -68,6 +69,7 @@ python3 -m http.server 8000   # then open http://localhost:8000/site/?data=../
 | `daily/YYYY/YYYY-MM-DD.json` | the snapshot for that day (UTC date of the run) |
 | `latest.json` | the newest snapshot; `git log -p latest.json` is a day-by-day diff of which cells changed hands |
 | `index.json` | every day on file with its totals (the web map's date list) |
+| `changes.json` | per cell, the dates its owner changed (claimed, taken, or unclaimed); rebuilt from `daily/` on every run by `changes.js` |
 | `site/` | the web map |
 | `docs/` | redirect from the old GitHub Pages address |
 
@@ -131,7 +133,8 @@ Run it yourself (Node 22+):
 ```bash
 npm ci
 npm test
-node snapshot.js            # writes daily/… and latest.json here
+node snapshot.js            # writes daily/…, latest.json, index.json and changes.json here
+node changes.js             # only rebuild changes.json from daily/
 node snapshot.js /tmp/out   # or somewhere else
 ```
 

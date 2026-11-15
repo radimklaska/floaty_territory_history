@@ -5,6 +5,7 @@
 //                                day-by-day diff of who gained/lost which cell
 //   index.json                   every day on file with its totals (the web
 //                                page's date list)
+//   changes.json                 per cell, the dates its owner changed (see changes.js)
 // Pretty-printed, one cell per line, clubs and cells sorted, so diffs stay
 // readable. Nothing is written unless every tile loaded.
 //
@@ -14,6 +15,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fetchWorld, TILE_URL, H3_RES } from './territory.js';
+import { writeChanges } from './changes.js';
 
 export function snapshotDoc(world, takenAt) {
   const unnamed = Object.values(world.unnamed).reduce((n, a) => n + a.length, 0);
@@ -71,8 +73,9 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const doc = snapshotDoc(world, takenAt);
   const { dayFile, bytes } = writeSnapshot(outDir, doc);
   updateIndex(outDir, doc);
+  const ch = writeChanges(outDir);
   console.log(`${doc.totals.cells} cells, ${doc.totals.clubs} clubs`
     + (doc.totals.unnamedCells ? `, ${doc.totals.unnamedCells} unnamed` : '')
     + ` — ${world.stats.requests} requests, ${(world.stats.bytes / 1e6).toFixed(2)} MB in ${((Date.now() - t0) / 1000).toFixed(0)} s`
-    + ` → ${path.relative(outDir, dayFile)} (${(bytes / 1e6).toFixed(2)} MB)`);
+    + ` → ${path.relative(outDir, dayFile)} (${(bytes / 1e6).toFixed(2)} MB); changes.json ${ch.cells} cells`);
 }
