@@ -7,7 +7,8 @@
 // (list or map) to highlight it. The previous day is loaded too, for the
 // gained / lost / change columns of the club list and for "show only changes", which greys out
 // every cell the previous day already had under the same club; zoomed out, the
-// changed cells are also gathered into numbered markers. A button under
+// changed cells are also gathered into numbered markers, and with a club selected
+// the cells it lost are drawn in red. A button under
 // the zoom control shows the visitor's own location. State lives in the URL
 // hash (the location never does):
 //   #d=<date>&c=<clubId>&diff=1&m=<zoom>/<lat>/<lng>
@@ -27,6 +28,7 @@ const CLUMP_ZOOM = 10;       // below: in diff mode the changed cells are also g
 const CLUMP_PX = 40;         // changed cells within this many px of a marker's first cell join that marker
 const PAD_KM = 0.7;          // > a cell's circumradius (~0.53 km)
 const GREY = '#8a94a3';      // greyed-out cells: other clubs while one is selected, unchanged cells in diff mode
+const LOST = '#ff3b30';      // diff mode with a club selected: the cells it held the previous day and no longer does
 
 // Only site/ is deployed; the snapshots are read from the repo itself
 // (raw.githubusercontent.com allows cross-origin reads). ?data=<path> points at
@@ -204,6 +206,21 @@ function cellsIn(b) {
 // diff mode every cell the previous day already had under the same club
 const dimmed = (h, club) => (focus !== null && club !== focus) || (diffPrev !== null && diffPrev.cellClub.get(h)?.id === club.id);
 
+// diff mode with a club selected: the cells it held the previous day and no
+// longer does (taken by another club, or unclaimed now), drawn in red
+let lostMemo = {};
+function lost() {
+  if (!diffPrev || !focus) return { cells: [], set: new Set() };
+  const m = lostMemo;
+  if (m.prev !== diffPrev || m.cur !== cur || m.id !== focus.id) {
+    const was = diffPrev.clubs.find((c) => c.id === focus.id);
+    const cells = was ? was.cells.filter((h) => cur.cellClub.get(h)?.id !== focus.id) : [];
+    lostMemo = { prev: diffPrev, cur, id: focus.id, cells, set: new Set(cells) };
+  }
+  return lostMemo;
+}
+const lostIn = (b) => lost().cells.filter((h) => { const [lat, lng] = centre(h); return lat >= b.s && lat <= b.n && lng >= b.w && lng <= b.e; });
+
 // ---------- canvas tiles ----------
 function drawTile(ctx, coords, size) {
   const z = coords.z;
@@ -260,6 +277,24 @@ function drawTile(ctx, coords, size) {
         ctx.lineWidth = dim ? 1 : 1.2;
         ctx.stroke();
       }
+    }
+  }
+  const gone = lostIn(box);                                    // on top of whatever holds them now
+  if (gone.length) {
+    ctx.fillStyle = ctx.strokeStyle = LOST;
+    if (z < HEX_ZOOM) {
+      const lat = (box.n + box.s) / 2;
+      const s = Math.max(3, 0.95 * (2 ** z * 256) / (40075 * Math.max(0.1, Math.cos((lat * Math.PI) / 180))));
+      ctx.globalAlpha = 0.95;
+      for (const h of gone) { const p = pt(centre(h)); ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s); }
+    } else {
+      ctx.beginPath();
+      for (const h of gone) path(h);
+      ctx.globalAlpha = 0.5;
+      ctx.fill();
+      ctx.globalAlpha = 0.95;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
   }
   ctx.globalAlpha = 1;
@@ -352,10 +387,13 @@ const clumps = L.layerGroup().addTo(map);
 function drawClumps() {
   clumps.clearLayers();
   if (!cur || !diffPrev || map.getZoom() >= CLUMP_ZOOM) return;
-  const changed = cellsIn(padded(map.getBounds(), 200)).filter((h) => !dimmed(h, cur.cellClub.get(h)));
-  if (changed.length > 20_000) return;
+  const box = padded(map.getBounds(), 200);
+  const changed = cellsIn(box).filter((h) => !dimmed(h, cur.cellClub.get(h)));
+  const gone = lostIn(box);                                    // a selected club's lost cells: their own red share
+  if (changed.length + gone.length > 20_000) return;
+  const isLost = new Set(gone);
   const groups = [];
-  for (const h of changed) {
+  for (const h of [...changed, ...gone]) {
     const p = map.latLngToLayerPoint(centre(h));
     let g = groups.find((q) => Math.abs(q.x - p.x) < CLUMP_PX && Math.abs(q.y - p.y) < CLUMP_PX);
     if (!g) groups.push((g = { x: p.x, y: p.y, cells: [] }));
@@ -363,10 +401,12 @@ function drawClumps() {
   }
   for (const g of groups) {
     const byClub = new Map();                                  // club -> { n: new, t: taken from another club }
-    let lat = 0, lng = 0;
+    let lat = 0, lng = 0, lostN = 0, lostTo = 0;
     for (const h of g.cells) {
-      const club = cur.cellClub.get(h), c = centre(h);
+      const c = centre(h);
       lat += c[0]; lng += c[1];
+      if (isLost.has(h)) { lostN++; if (cur.cellClub.has(h)) lostTo++; continue; }
+      const club = cur.cellClub.get(h);
       let e = byClub.get(club);
       if (!e) byClub.set(club, (e = { n: 0, t: 0 }));
       if (diffPrev.cellClub.has(h)) e.t++; else e.n++;
@@ -378,6 +418,7 @@ function drawClumps() {
       const from = at; at += ((e.n + e.t) / n) * 100;
       return `${club.color} ${from.toFixed(1)}% ${at.toFixed(1)}%`;
     });
+    if (lostN) stops.push(`${LOST} ${at.toFixed(1)}% 100%`);
     const d = Math.round(Math.min(44, 20 + 4 * Math.log2(n)));   // 20 px for one cell
     const marker = L.marker([lat / n, lng / n], {
       pane: 'clumpPane', keyboard: false, riseOnHover: true,
@@ -387,6 +428,8 @@ function drawClumps() {
     const rows = clubs.slice(0, 6).map(([club, e]) => `<div><span class="sw" style="background:${esc(club.color)}"></span>${esc(club.name)}`
       + ` <span class="n">${[e.n && `${fmt(e.n)} new`, e.t && `${fmt(e.t)} taken`].filter(Boolean).join(', ')}</span></div>`);
     if (clubs.length > 6) rows.push(`<div class="n">+${clubs.length - 6} more clubs</div>`);
+    if (lostN) rows.push(`<div><span class="sw" style="background:${LOST}"></span>lost by ${esc(focus.name)} <span class="n">`
+      + [lostTo && `${fmt(lostTo)} taken by others`, lostN - lostTo && `${fmt(lostN - lostTo)} unclaimed now`].filter(Boolean).join(', ') + '</span></div>');
     marker.bindTooltip(`<b>${fmt(n)} changed cell${n === 1 ? '' : 's'}</b>${rows.join('')}`,
       { direction: 'top', offset: [0, -d / 2], className: 'tip clump-tip', opacity: 1 });
     marker.on('click', () => map.fitBounds(L.latLngBounds(g.cells.map(centre)).pad(0.5), { maxZoom: 12 }));
@@ -404,9 +447,15 @@ map.on('mousemove', (e) => {
   if (t - hoverAt < 50) return;
   hoverAt = t;
   const h = cellAt(e.latlng), club = h && cur.cellClub.get(h);
+  if (!club && h && lost().set.has(h)) {                       // a selected club's lost cell, unclaimed now
+    tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${LOST}"></span><b>lost by ${esc(focus.name)}</b> <span class="n">unclaimed now</span>`);
+    if (!map.hasLayer(tip)) tip.addTo(map);
+    return;
+  }
   if (!club) { map.closeTooltip(tip); return; }
   let change = '';                                             // diff mode: how the cell differs from the previous day
   if (diffPrev) { const was = diffPrev.cellClub.get(h); change = !was ? ' · new' : was.id !== club.id ? ` · was ${esc(was.name)}` : ''; }
+  if (lost().set.has(h)) change += ' · <b class="lost">lost</b>';
   tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${esc(club.color)}"></span><b>${esc(club.name)}</b> <span class="n">${fmt(club.cells.length)} cells${change}</span>`);
   if (!map.hasLayer(tip)) tip.addTo(map);
 });
@@ -423,6 +472,7 @@ function setFocus(club, fit) {
   $('focus').hidden = !club;
   if (club) $('focus').querySelector('b').textContent = club.name;
   renderClubs();
+  if (cur) renderTotals();
   grid.redraw();
   scheduleLabels();
   writeHash();
@@ -510,6 +560,7 @@ function renderTotals() {
     let gained = 0, taken = 0;
     for (const [h, club] of cur.cellClub) { const was = diffPrev.cellClub.get(h); if (!was) gained++; else if (was.id !== club.id) taken++; }
     diffTxt = `<br>in colour: <b>${fmt(gained)}</b> newly claimed, <b>${fmt(taken)}</b> changed hands`;
+    if (focus) diffTxt += `<br><span class="lost">in red</span>: <b>${fmt(lost().cells.length)}</b> cells ${esc(focus.name)} lost`;
   }
   $('totals').innerHTML = `<b>${fmt(cur.totals.cells)}</b> cells${deltaTxt} · <b>${fmt(cur.totals.clubs)}</b> clubs<br>`
     + `taken ${esc(String(cur.takenAt).slice(0, 16).replace('T', ' '))} UTC` + diffTxt;

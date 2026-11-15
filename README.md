@@ -30,6 +30,9 @@ day's territory:
   numbered markers, so even a single changed hexagon stands out: the ring
   shows which clubs gained them, hovering lists the clubs (new or taken from
   another club), and a click zooms in on them.
+  With a club selected, the cells it held the previous day and no longer does
+  (taken by another club, or unclaimed now) are drawn in red, and the markers
+  count them too.
 - **Navigation:** ◀ ▶ (or Alt+←/→) step through the days.
 - **My location:** the ⌖ button under the zoom buttons shows where you are (a
   dot with its accuracy circle, kept up to date while it's on) and brings the
