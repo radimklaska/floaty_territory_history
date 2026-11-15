@@ -6,7 +6,8 @@
 // from LABEL_ZOOM, and the faint unclaimed grid from GRID_ZOOM. Click a club
 // (list or map) to highlight it. The previous day is loaded too, for the
 // gained / lost / change columns of the club list and for "show only changes", which greys out
-// every cell the previous day already had under the same club. A button under
+// every cell the previous day already had under the same club; zoomed out, the
+// changed cells are also gathered into numbered markers. A button under
 // the zoom control shows the visitor's own location. State lives in the URL
 // hash (the location never does):
 //   #d=<date>&c=<clubId>&diff=1&m=<zoom>/<lat>/<lng>
@@ -22,6 +23,8 @@ const RES = 8;
 const HEX_ZOOM = 9;          // below: each cell is a small square (a hexagon would be ~2 px)
 const LABEL_ZOOM = 10;
 const GRID_ZOOM = 12;        // a cell is ~40 px wide here
+const CLUMP_ZOOM = 10;       // below: in diff mode the changed cells are also gathered into markers, so even one stands out
+const CLUMP_PX = 40;         // changed cells within this many px of a marker's first cell join that marker
 const PAD_KM = 0.7;          // > a cell's circumradius (~0.53 km)
 const GREY = '#8a94a3';      // greyed-out cells: other clubs while one is selected, unchanged cells in diff mode
 
@@ -288,6 +291,7 @@ const labels = L.layerGroup().addTo(map);
 let labelTimer = 0;
 const scheduleLabels = () => { clearTimeout(labelTimer); labelTimer = setTimeout(drawLabels, 120); };
 function drawLabels() {
+  drawClumps();
   labels.clearLayers();
   if (!cur || map.getZoom() < LABEL_ZOOM) return;
   const visible = new Set(cellsIn(padded(map.getBounds())).filter((h) => !dimmed(h, cur.cellClub.get(h))));   // coloured cells only
@@ -336,6 +340,57 @@ function drawLabels() {
         html: `<span class="chip"><span class="sw" style="background:${esc(p.club.color)}"></span>${esc(p.club.name)}</span>` }),
     }).addTo(labels);
     if (placed.length >= 80) break;
+  }
+}
+
+// ---------- diff mode, zoomed out: changed cells gathered into markers ----------
+// A changed cell is a dot of a pixel or two below CLUMP_ZOOM, lost among the grey
+// ones. Each marker gathers the changed cells near it on screen: the count in the
+// middle, a ring split by club, the clubs on hover, and a click zooms in on them.
+map.createPane('clumpPane').style.zIndex = 370;
+const clumps = L.layerGroup().addTo(map);
+function drawClumps() {
+  clumps.clearLayers();
+  if (!cur || !diffPrev || map.getZoom() >= CLUMP_ZOOM) return;
+  const changed = cellsIn(padded(map.getBounds(), 200)).filter((h) => !dimmed(h, cur.cellClub.get(h)));
+  if (changed.length > 20_000) return;
+  const groups = [];
+  for (const h of changed) {
+    const p = map.latLngToLayerPoint(centre(h));
+    let g = groups.find((q) => Math.abs(q.x - p.x) < CLUMP_PX && Math.abs(q.y - p.y) < CLUMP_PX);
+    if (!g) groups.push((g = { x: p.x, y: p.y, cells: [] }));
+    g.cells.push(h);
+  }
+  for (const g of groups) {
+    const byClub = new Map();                                  // club -> { n: new, t: taken from another club }
+    let lat = 0, lng = 0;
+    for (const h of g.cells) {
+      const club = cur.cellClub.get(h), c = centre(h);
+      lat += c[0]; lng += c[1];
+      let e = byClub.get(club);
+      if (!e) byClub.set(club, (e = { n: 0, t: 0 }));
+      if (diffPrev.cellClub.has(h)) e.t++; else e.n++;
+    }
+    const n = g.cells.length;
+    const clubs = [...byClub].sort((a, b) => b[1].n + b[1].t - a[1].n - a[1].t);
+    let at = 0;                                                // the ring: each club's share, the biggest from the top
+    const stops = clubs.map(([club, e]) => {
+      const from = at; at += ((e.n + e.t) / n) * 100;
+      return `${club.color} ${from.toFixed(1)}% ${at.toFixed(1)}%`;
+    });
+    const d = Math.round(Math.min(44, 20 + 4 * Math.log2(n)));   // 20 px for one cell
+    const marker = L.marker([lat / n, lng / n], {
+      pane: 'clumpPane', keyboard: false, riseOnHover: true,
+      icon: L.divIcon({ className: 'clump', iconSize: [d, d],
+        html: `<span class="ring" style="background:conic-gradient(${esc(stops.join(','))})"></span><span class="c">${fmt(n)}</span>` }),
+    });
+    const rows = clubs.slice(0, 6).map(([club, e]) => `<div><span class="sw" style="background:${esc(club.color)}"></span>${esc(club.name)}`
+      + ` <span class="n">${[e.n && `${fmt(e.n)} new`, e.t && `${fmt(e.t)} taken`].filter(Boolean).join(', ')}</span></div>`);
+    if (clubs.length > 6) rows.push(`<div class="n">+${clubs.length - 6} more clubs</div>`);
+    marker.bindTooltip(`<b>${fmt(n)} changed cell${n === 1 ? '' : 's'}</b>${rows.join('')}`,
+      { direction: 'top', offset: [0, -d / 2], className: 'tip clump-tip', opacity: 1 });
+    marker.on('click', () => map.fitBounds(L.latLngBounds(g.cells.map(centre)).pad(0.5), { maxZoom: 12 }));
+    marker.addTo(clumps);
   }
 }
 

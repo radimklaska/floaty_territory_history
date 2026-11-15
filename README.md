@@ -26,6 +26,10 @@ day's territory:
   every cell the previous snapshot already had under the same club. Newly
   claimed cells and cells that changed hands keep their club's colour and
   labels, and the hover tip says *new* or *was \<club\>*.
+  Zoomed out (below zoom 10), the changed cells are also gathered into
+  numbered markers, so even a single changed hexagon stands out: the ring
+  shows which clubs gained them, hovering lists the clubs (new or taken from
+  another club), and a click zooms in on them.
 - **Navigation:** ◀ ▶ (or Alt+←/→) step through the days.
 - **My location:** the ⌖ button under the zoom buttons shows where you are (a
   dot with its accuracy circle, kept up to date while it's on) and brings the
