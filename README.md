@@ -55,8 +55,10 @@ domain `floaty.klaska.net`; response headers incl. the CSP in `site/_headers`).
 requests. It needs the repo secrets `CLOUDFLARE_API_TOKEN` and
 `CLOUDFLARE_ACCOUNT_ID`. By hand: `npm ci && npx wrangler deploy`.
 
-The old address, `klaska.net/floaty_territory_history/`, is still GitHub Pages
-(from `docs/` on `main`), which now holds only a page that redirects to
+The old addresses still work. `klaska.net/floaty_territory_history/` is a 301 to
+floaty.klaska.net (klaska.net's own `_redirects`; browsers keep the `#…` link state
+across it). `radimklaska.github.io/floaty_territory_history/` is still GitHub Pages
+(from `docs/` on `main`), which holds only a page that redirects to
 floaty.klaska.net, keeping the `#…` link state.
 
 To try it locally, serve the repo root and point it at the local data:
