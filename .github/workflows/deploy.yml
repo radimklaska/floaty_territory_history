@@ -2,7 +2,10 @@ name: Deploy web map
 
 # Deploys site/ to Cloudflare (assets-only Worker, see wrangler.jsonc).
 #   push to main touching the site -> production (floaty.klaska.net)
-#   pull request -> a preview version on workers.dev (noindex), linked in one PR comment
+#   PR opened/pushed -> a Preview named pr-<N> on workers.dev (noindex), linked in
+#                       one PR comment, and visual regression against production
+#                       (job `visual`, tests/visual.spec.js)
+#   PR closed/merged -> the Preview is deleted and the comment says so
 # The daily snapshots don't deploy: the page reads them from raw.githubusercontent.com.
 #
 # Secrets: CLOUDFLARE_API_TOKEN (deploy token: Workers Scripts Edit + Account
@@ -20,11 +23,14 @@ on:
       - '.github/workflows/deploy.yml'
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, closed]
     paths:
       - 'site/**'
       - 'wrangler.jsonc'
       - 'package.json'
       - 'package-lock.json'
+      - 'playwright.config.js'
+      - 'tests/**'
       - '.github/workflows/deploy.yml'
   workflow_dispatch: {}
 
@@ -32,14 +38,19 @@ permissions:
   contents: read
 
 concurrency:
-  # One production deploy at a time; previews per PR.
-  group: deploy-${{ github.event_name == 'pull_request' && github.ref || 'production' }}
+  # One production deploy at a time; one run per PR (a close waits for a running deploy).
+  group: deploy-${{ github.event_name == 'pull_request' && github.event.number || 'production' }}
   cancel-in-progress: false
+
+env:
+  PREVIEW_MARKER: '<!-- preview-links -->'
 
 jobs:
   deploy:
     # Fork PRs get no secrets, so they cannot be previewed.
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: >-
+      github.event.action != 'closed' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -47,6 +58,8 @@ jobs:
       pull-requests: write # the preview-links comment
     env:
       IS_PR: ${{ github.event_name == 'pull_request' }}
+    outputs:
+      preview_url: ${{ steps.preview.outputs.url }}
 
     steps:
       - uses: actions/checkout@v7
@@ -66,34 +79,148 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
 
-      - name: Upload a preview version
+      # Workers Previews (open beta): one Preview per PR, updated on every push.
+      - name: Upload the PR preview
+        id: preview
         if: env.IS_PR == 'true'
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PR: ${{ github.event.number }}
         run: |
-          npx wrangler versions upload --preview-alias "pr-$PR" | tee upload.log
-          grep -E 'Preview (Alias )?URL' upload.log >> "$GITHUB_STEP_SUMMARY" || true
+          rc=0
+          npx wrangler preview --name "pr-$PR" --message "PR #$PR" --json > preview.out 2> preview.err || rc=$?
+          if [ "$rc" -ne 0 ]; then
+            cat preview.out preview.err
+            echo "::error::wrangler preview failed (exit $rc)"
+            exit "$rc"
+          fi
+          # Keep only the JSON document, in case anything else reached stdout.
+          sed -n '/^{/,$p' preview.out > preview.json
+          url=$(jq -r '.preview.urls[0] // empty' preview.json)
+          commit_url=$(jq -r '.deployment.urls[0] // empty' preview.json)
+          if [ -z "$url" ]; then
+            cat preview.out preview.err
+            echo "::error::wrangler preview returned no URL"
+            exit 1
+          fi
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "commit_url=$commit_url" >> "$GITHUB_OUTPUT"
+          printf 'Preview: %s\nThis commit: %s\n' "$url" "$commit_url" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Post the preview links on the PR
-        if: env.IS_PR == 'true'
+        if: steps.preview.outputs.url != ''
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.number }}
           SHA: ${{ github.event.pull_request.head.sha }}
+          URL: ${{ steps.preview.outputs.url }}
+          COMMIT_URL: ${{ steps.preview.outputs.commit_url }}
         run: |
-          alias_url=$(grep -E '^Version Preview Alias URL: ' upload.log | awk '{print $NF}')
-          version_url=$(grep -E '^Version Preview URL: ' upload.log | awk '{print $NF}')
-          marker='<!-- preview-links -->'
           # shellcheck disable=SC2016 # literal backticks are Markdown
-          body=$(printf '%s\n**Preview of this PR:** %s\nThis commit (`%s`): %s\nProduction is unchanged until the PR is merged. Previews are noindex.' \
-            "$marker" "$alias_url" "${SHA:0:7}" "$version_url")
+          body=$(printf '%s\n**Preview of this PR:** %s\nThis commit (`%s`): %s\nProduction is unchanged until the PR is merged. Previews are noindex and deleted when the PR is closed.' \
+            "$PREVIEW_MARKER" "$URL" "${SHA:0:7}" "${COMMIT_URL:-n/a}")
           id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -1)
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$PREVIEW_MARKER\"))) | .id" | head -1)
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" > /dev/null
           else
             gh pr comment "$PR" --repo "$REPO" --body "$body"
+          fi
+
+  # The map is the code, so unlike the Jekyll sites this runs on every PR that
+  # reaches this workflow. A PR that changes the map on purpose fails it by design:
+  # look at the visual-diffs artifact before merging.
+  visual:
+    needs: deploy
+    if: needs.deploy.outputs.preview_url != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROD_URL: https://floaty.klaska.net
+      PREVIEW_URL: ${{ needs.deploy.outputs.preview_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          npm ci --no-audit --no-fund
+          npx playwright install --with-deps chromium
+
+      - name: Wait for the preview
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' -m 20 "$PREVIEW_URL/" || true)
+            if [ "$code" = "200" ]; then echo "Preview ready after ${i} attempt(s)."; exit 0; fi
+            echo "attempt $i: HTTP $code, waiting..."
+            sleep 10
+          done
+          echo "::error::Preview $PREVIEW_URL did not answer 200 within ~5 minutes."
+          exit 1
+
+      - name: Compare preview against production
+        run: npx playwright test
+
+      - name: Upload diffs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diffs
+          path: |
+            visual-diffs/
+            playwright-report/
+          retention-days: 14
+          if-no-files-found: ignore
+
+  cleanup:
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write # update the preview-links comment
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install wrangler
+        run: npm ci --no-audit --no-fund
+
+      - name: Delete the PR preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PR: ${{ github.event.number }}
+        run: |
+          if ! npx wrangler preview delete --name "pr-$PR" --skip-confirmation > delete.log 2>&1; then
+            cat delete.log
+            # Nothing to delete (e.g. the PR never got a preview) is fine.
+            if grep -qiE 'not found|does not exist' delete.log; then exit 0; fi
+            exit 1
+          fi
+          cat delete.log
+
+      - name: Say so in the preview-links comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.number }}
+        run: |
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$PREVIEW_MARKER\"))) | .id" | head -1)
+          if [ -n "$id" ]; then
+            body=$(printf '%s\n~~Preview of this PR~~: deleted when the PR was closed.' "$PREVIEW_MARKER")
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -f body="$body" > /dev/null
           fi

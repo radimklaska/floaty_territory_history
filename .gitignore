@@ -2,3 +2,6 @@ node_modules/
 *.tmp
 .wrangler/
 .playwright-mcp/
+playwright-report/
+test-results/
+visual-diffs/

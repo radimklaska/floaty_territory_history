@@ -15,6 +15,10 @@
   // Cloudflare owns this hostname's DNS record and certificate.
   "routes": [{ "pattern": "floaty.klaska.net", "custom_domain": true }],
 
+  // Workers Previews (`wrangler preview`, one per PR, see deploy.yml). Nothing to
+  // configure for an assets-only Worker, but the block has to exist.
+  "previews": {},
+
   "assets": {
     "directory": "./site",
     "html_handling": "auto-trailing-slash",

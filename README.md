@@ -51,9 +51,14 @@ the history gets, and a daily snapshot needs no deploy.
 It is hosted on Cloudflare as an assets-only Worker (`wrangler.jsonc`, custom
 domain `floaty.klaska.net`; response headers incl. the CSP in `site/_headers`).
 `.github/workflows/deploy.yml` deploys it on every push to `main` that touches
-`site/` or the Worker config, and uploads a `workers.dev` preview for pull
-requests. It needs the repo secrets `CLOUDFLARE_API_TOKEN` and
-`CLOUDFLARE_ACCOUNT_ID`. By hand: `npm ci && npx wrangler deploy`.
+`site/` or the Worker config. For pull requests it creates a `workers.dev`
+preview (`wrangler preview`, one per PR, linked in a PR comment and deleted when
+the PR is closed) and runs a visual regression of fixed map views on the preview
+against production (`tests/visual.spec.js`; a PR that changes the map on purpose
+fails it by design, so check the `visual-diffs` artifact). It needs the repo
+secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. By hand:
+`npm ci && npx wrangler deploy`; the visual check:
+`PREVIEW_URL=<url> npx playwright test`.
 
 The old address, `klaska.net/floaty_territory_history/`, is still GitHub Pages
 (from `docs/` on `main`), which now holds only a page that redirects to
