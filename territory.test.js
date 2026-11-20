@@ -42,13 +42,16 @@ test('mergeTiles: home tile names win over a neighbour guess, gaps stay unnamed,
   }
 });
 
-// fake CDN: one z5 tile with A and B, their z10 home tile naming them; 404 elsewhere
+// fake CDN: the z5 tile over A and B (17/10) is empty, like Floaty's z5 tile
+// over Taiwan; its z6 child 34/21 has both cells, and their z10 home tile names
+// them. 404 elsewhere.
 function fakeCdn({ failKey } = {}) {
   const tiles = {
-    '5/17/10': encodeTile([
+    '5/17/10': encodeTile([], 5, 17, 10),
+    '6/34/21': encodeTile([
       { type: 'cell', h3: A, props: { color: '#22C55E', isCell: true } },
       { type: 'cell', h3: B, props: { color: '#FFDC16', isCell: true } },
-    ], 5, 17, 10),
+    ], 6, 34, 21),
     '10/553/346': encodeTile([
       { type: 'cell', h3: A, props: { color: '#22C55E', isCell: true } },
       { type: 'label', h3: A, props: { clubName: 'One', clubId: 'c1', color: '#22C55E', isLabel: true } },
@@ -66,15 +69,17 @@ function fakeCdn({ failKey } = {}) {
   return { fetchImpl, calls };
 }
 
-test('fetchWorld: every z5 tile, then only the z10 home tiles; clubs named', async () => {
+test('fetchWorld: every z5 tile, the z6 tiles under the ones that are not 404 (even if empty), then the z10 home tiles', async () => {
   const cdn = fakeCdn();
   const w = await fetchWorld({ fetchImpl: cdn.fetchImpl });
-  assert.equal(cdn.calls.length, 1024 + 1);
-  assert.equal(cdn.calls.filter((k) => k.startsWith('10/')).length, 1);
+  assert.equal(cdn.calls.filter((k) => k.startsWith('5/')).length, 1024);
+  assert.deepEqual(cdn.calls.filter((k) => k.startsWith('6/')).sort(), ['6/34/20', '6/34/21', '6/35/20', '6/35/21']);
+  assert.deepEqual(cdn.calls.filter((k) => k.startsWith('10/')), ['10/553/346']);
   assert.deepEqual(Object.fromEntries(Object.entries(w.clubs).map(([id, c]) => [id, [c.name, c.cells]])),
     { c1: ['One', [A]], c2: ['Two', [B]] });
   assert.deepEqual(w.unnamed, {});
-  assert.equal(w.stats.requests, 1025);
+  assert.equal(w.stats.requests, 1024 + 4 + 1);
+  assert.equal(w.stats.tiles, 1024 + 4 + 1);
 });
 
 test('fetchWorld: a tile that keeps failing rejects the whole snapshot (after 3 attempts)', async () => {
