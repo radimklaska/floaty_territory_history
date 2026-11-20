@@ -459,6 +459,33 @@ function drawClumps() {
   }
 }
 
+// ---------- easter eggs: a few emoji pins that only appear fully zoomed in ----------
+const EGG_ZOOM = 17;
+const HIRE = { emoji: '😎', text: 'Hire me!', href: 'https://klaska.net/' };
+const EGGS = [
+  { at: [50.65412673297413, 13.822435511134005], emoji: '🔧', text: "Let's void some warranty", href: 'https://klaska.net/' },
+  ...[
+    [55.69213797744722, 9.530844798524708],
+    [55.497105794430475, 10.056576441925646],
+    [56.63209042828194, -4.828422851566877],
+    [52.09880742950877, -0.025884255807302317],
+    [43.645328044666456, 3.5454337419298616],
+    [37.09210331360033, -8.162149648465672],
+    [46.82378215664161, 9.276508071693218],
+    [47.621436475374765, 19.202659395238776],
+    [50.164130502340036, 14.082408283078504],
+  ].map((at) => ({ at, ...HIRE })),
+];
+map.createPane('eggPane').style.zIndex = 650;                 // above the territory, labels and markers
+const eggs = L.layerGroup(EGGS.map((g) => L.marker(g.at, {
+  pane: 'eggPane', keyboard: false, riseOnHover: true,
+  icon: L.divIcon({ className: 'egg', iconSize: [32, 32],
+    html: `<a href="${esc(g.href)}" target="_blank" rel="noopener" aria-label="${esc(g.text)}">${esc(g.emoji)}</a>` }),
+}).bindTooltip(esc(g.text), { direction: 'top', offset: [0, -16], className: 'tip', opacity: 1 })));
+const showEggs = () => { if (map.getZoom() >= EGG_ZOOM) eggs.addTo(map); else eggs.remove(); };
+map.on('zoomend', showEggs);
+showEggs();
+
 // ---------- hover + click on the map ----------
 const tip = L.tooltip({ direction: 'top', offset: [0, -6], className: 'tip', opacity: 1 });
 const cellAt = (latlng) => (cur && map.getZoom() >= HEX_ZOOM ? h3.latLngToCell(latlng.lat, latlng.lng, RES) : null);
@@ -491,6 +518,7 @@ function onHover(e, force) {
   if (!force && t - hoverAt < 50) return;
   hoverAt = t;
   lastHover = e;
+  if (e.originalEvent?.target?.closest?.('.egg')) { map.closeTooltip(tip); return; }   // an easter egg has its own tip
   const h = cellAt(e.latlng), club = h && cur.cellClub.get(h);
   if (!club && h && lost().set.has(h)) {                       // a selected club's lost cell, unclaimed now
     tip.setLatLng(e.latlng).setContent(`<span class="sw" style="background:${LOST}"></span><b>lost by ${esc(focus.name)}</b> <span class="n">unclaimed now</span>${lastChange(h)}`);
