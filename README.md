@@ -142,17 +142,22 @@ each hour.
 
 `snapshot.js`:
 
-1. fetches all 1,024 zoom-5 tiles; about 50 contain territory, the rest are
-   404s. They list every claimed cell, but only with its colour.
-2. fetches the zoom-10 tile holding each cell's centre (about 1,800 tiles),
+1. fetches all 1,024 zoom-5 tiles; fewer than 100 aren't 404s. They only
+   show where to look: zoom 5 leaves out whole areas, returning an empty tile
+   where there is territory (until 2026-11-20 this missed ~760 cells in
+   Taiwan, South Florida, Buenos Aires and Singapore, see Caveats).
+2. fetches the four zoom-6 tiles under each zoom-5 tile that isn't a 404
+   (about 340). These list every claimed cell, but only with its colour;
+   zoom 6 matches zoom 7 cell for cell.
+3. fetches the zoom-10 tile holding each cell's centre (about 2,000 tiles),
    which names the cell's club.
-3. maps each polygon back to its H3 index (from its centroid) and writes the
+4. maps each polygon back to its H3 index (from its centroid) and writes the
    snapshot. If any tile fails after 3 attempts, nothing is written and the
    run fails.
-4. updates `index.json` and rebuilds `changes.json` from all the daily files
+5. updates `index.json` and rebuilds `changes.json` from all the daily files
    (`changes.js`).
 
-That's about 2,800 requests and 7 MB once a day.
+That's about 3,400 requests once a day.
 
 Run it yourself (Node 22+):
 
@@ -168,6 +173,11 @@ node snapshot.js /tmp/out   # or somewhere else
 
 - A snapshot is what Floaty's tiles showed at run time. Claims made after the
   last hourly tile update show up the next day.
+- Snapshots up to 2026-11-20 miss about 760 cells (about 1%): all of Taiwan
+  and parts of South Florida, Buenos Aires and Singapore, where Floaty's zoom-5
+  tiles were empty. From 2026-11-21 they are read from zoom 6, so that day
+  shows them as newly gained, and `changes.json` dates their last change to
+  then. That can't be backfilled: the tiles only ever show the present.
 - GitHub sometimes delays scheduled runs, or rarely skips one, so a day can be
   missing.
 - The tile format is Floaty's internal format and may change without notice.

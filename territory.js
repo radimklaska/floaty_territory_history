@@ -11,8 +11,12 @@
 // Unclaimed cells are absent; tiles with no territory are 404.
 //
 // A snapshot of the world:
-//   1. all 1024 z5 tiles (mostly 404s) list every claimed cell, colour only;
-//   2. the z10 tile holding each cell's centre (its "home" tile, where its
+//   1. all 1024 z5 tiles (mostly 404s) show where there is territory at all;
+//   2. the four z6 tiles under each z5 tile that isn't a 404 list every claimed
+//      cell, colour only. z5 itself can't be the list: it leaves out whole
+//      areas (in Nov 2026 Taiwan, South Florida and Buenos Aires came back as
+//      empty tiles), while z6 matches z7 cell for cell;
+//   3. the z10 tile holding each cell's centre (its "home" tile, where its
 //      label point is) gives the club id and name.
 // Polygons are mapped back to H3 ids via their centroid (a clipped hexagon's
 // centroid is still inside it).
@@ -23,7 +27,8 @@ import { latLngToCell, cellToLatLng } from 'h3-js';
 
 export const TILE_URL = 'https://cdn.floaty-app.com/territory-tiles';
 export const H3_RES = 8;
-export const DISCOVERY_Z = 5;      // lowest zoom with data; complete cell lists
+export const PRUNE_Z = 5;          // lowest zoom with data: only tells where to look (it drops areas)
+export const DISCOVERY_Z = 6;      // complete cell lists
 export const NAMES_Z = 10;         // lowest zoom whose tiles carry club names
 
 const tileX = (lon, z) => Math.floor(((lon + 180) / 360) * 2 ** z);
@@ -75,7 +80,7 @@ export function decodeTile(buf, z, x, y) {
   };
 }
 
-// Merge the z5 cell lists (complete, colour only) with the z10 tiles (names):
+// Merge the z6 cell lists (complete, colour only) with the z10 tiles (names):
 //   { cells, clubs: { <clubId>: { name, color, cells: [h3…] } }, unnamed: { <color>: [h3…] } }
 // Clubs are keyed and cells sorted so consecutive snapshots diff cleanly.
 export function mergeTiles(discovery, names) {
@@ -88,7 +93,7 @@ export function mergeTiles(discovery, names) {
     for (const [h, color, clubId] of t.cells) {
       const home = homeTile(h) === key;
       const cur = cells.get(h);
-      if (!cur) cells.set(h, { color, clubId, home });               // newer than the z5 tile — still real
+      if (!cur) cells.set(h, { color, clubId, home });               // newer than the z6 tile — still real
       else if (clubId && (home || (!cur.home && !cur.clubId))) Object.assign(cur, { color, clubId, home });
     }
   }
@@ -122,7 +127,7 @@ export async function fetchWorld({ fetchImpl = fetch, concurrency = 8, retryDela
       try {
         const resp = await fetchImpl(`${TILE_URL}/${key}.pbf`, { signal: AbortSignal.timeout(30_000) });
         stats.requests++;
-        if (resp.status === 404) { await resp.arrayBuffer(); return { z, x, y, cells: [], clubs: {} }; }
+        if (resp.status === 404) { await resp.arrayBuffer(); return { z, x, y, cells: [], clubs: {}, none: true }; }
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const buf = new Uint8Array(await resp.arrayBuffer());
         stats.bytes += buf.length;
@@ -133,12 +138,17 @@ export async function fetchWorld({ fetchImpl = fetch, concurrency = 8, retryDela
       }
     }
   }
-  const z5 = [];
-  for (let x = 0; x < 2 ** DISCOVERY_Z; x++) for (let y = 0; y < 2 ** DISCOVERY_Z; y++) z5.push([DISCOVERY_Z, x, y]);
-  const discovery = await mapLimit(z5, concurrency, getTile);
+  const top = [];
+  for (let x = 0; x < 2 ** PRUNE_Z; x++) for (let y = 0; y < 2 ** PRUNE_Z; y++) top.push([PRUNE_Z, x, y]);
+  const pruned = await mapLimit(top, concurrency, getTile);
+  const span = 2 ** (DISCOVERY_Z - PRUNE_Z);                   // child tiles per side
+  const keys = [];                                             // an empty tile (not a 404) can still have cells below it
+  for (const t of pruned) if (!t.none) for (let dx = 0; dx < span; dx++) for (let dy = 0; dy < span; dy++) keys.push([DISCOVERY_Z, t.x * span + dx, t.y * span + dy]);
+  const discovery = await mapLimit(keys, concurrency, getTile);
   const nameKeys = new Set();
   for (const t of discovery) for (const [h] of t.cells) nameKeys.add(homeTile(h));
-  log(`z${DISCOVERY_Z}: ${discovery.filter((t) => t.cells.length).length} tiles with territory; fetching ${nameKeys.size} z${NAMES_Z} tiles for club names`);
+  log(`z${PRUNE_Z}: ${keys.length / span ** 2} tiles not 404; z${DISCOVERY_Z}: ${discovery.filter((t) => t.cells.length).length} tiles with territory; `
+    + `fetching ${nameKeys.size} z${NAMES_Z} tiles for club names`);
   const names = await mapLimit([...nameKeys].map((k) => k.split('/').map(Number)), concurrency, getTile);
-  return { ...mergeTiles(discovery, names), stats: { ...stats, tiles: z5.length + nameKeys.size } };
+  return { ...mergeTiles(discovery, names), stats: { ...stats, tiles: top.length + keys.length + nameKeys.size } };
 }
