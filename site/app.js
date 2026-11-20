@@ -460,7 +460,7 @@ function drawClumps() {
 }
 
 // ---------- easter eggs: a few emoji pins that only appear fully zoomed in ----------
-const EGG_ZOOM = 17;
+const EGG_ZOOM = 15;
 const HIRE = { emoji: '😎', text: 'Hire me!', href: 'https://klaska.net/' };
 const EGGS = [
   { at: [50.65412673297413, 13.822435511134005], emoji: '🔧', text: "Let's void some warranty", href: 'https://klaska.net/' },
