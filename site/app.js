@@ -623,6 +623,13 @@ $('search').addEventListener('input', renderClubs);
 $('grid').addEventListener('change', () => grid.redraw());
 $('diff').addEventListener('change', () => setDiff($('diff').checked));
 
+// notes shown above the club list on a given day (trusted HTML, written here)
+const DAY_NOTES = {
+  '2026-11-20': 'Gained and Change are inflated on this day: about 760 cells in Taiwan, South Florida, Buenos Aires '
+    + 'and Singapore were missing from earlier snapshots and show up as gained here. '
+    + '<a href="https://github.com/radimklaska/floaty_territory_history/pull/6">Why</a>',
+};
+
 function renderTotals() {
   const i = days.findIndex((d) => d.date === cur.date);
   const prev = i > 0 ? days[i - 1] : null;
@@ -641,6 +648,8 @@ function renderTotals() {
   $('diff').disabled = i <= 0;                                 // the first day has nothing to compare against
   $('diffLabel').title = i <= 0 ? 'No earlier snapshot to compare with.' : $('diffLabel').dataset.title;
   $('next').disabled = i < 0 || i >= days.length - 1;
+  $('note').innerHTML = DAY_NOTES[cur.date] || '';
+  $('note').hidden = !DAY_NOTES[cur.date];
 }
 
 // ---------- date navigation ----------
