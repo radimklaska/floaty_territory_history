@@ -12,14 +12,16 @@
     "node": ">=22"
   },
   "dependencies": {
-    "@mapbox/vector-tile": "^2.0.5",
-    "h3-js": "^4.5.0",
-    "pbf": "^4.0.2"
+    "@mapbox/vector-tile": "2.0.5",
+    "h3-js": "4.5.0",
+    "pbf": "4.0.2"
   },
   "devDependencies": {
-    "@playwright/test": "1.62.1",
-    "pixelmatch": "^5.3.0",
-    "pngjs": "^7.0.0",
-    "wrangler": "4.159.0"
+    "@playwright/test": "1.65.0",
+    "lighthouse": "13.6.0",
+    "pixelmatch": "8.0.0",
+    "pngjs": "7.0.0",
+    "qrcode": "1.5.4",
+    "wrangler": "4.160.1"
   }
 }

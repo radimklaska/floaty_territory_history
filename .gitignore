@@ -5,3 +5,6 @@ node_modules/
 playwright-report/
 test-results/
 visual-diffs/
+visual-results/
+visual-report/
+lighthouse/

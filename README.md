@@ -51,18 +51,20 @@ the history gets, and a daily snapshot needs no deploy.
 It is hosted on Cloudflare as an assets-only Worker (`wrangler.jsonc`, custom
 domain `floaty.klaska.net`; response headers incl. the CSP in `site/_headers`).
 `.github/workflows/deploy.yml` deploys it on every push to `main` that touches
-`site/` or the Worker config. For pull requests it creates a `workers.dev`
-preview (`wrangler preview`, one per PR, linked in a PR comment and deleted when
-the PR is closed) and runs a visual regression of fixed map views on the preview
-against production (`tests/visual.spec.js`; a PR that changes the map on purpose
-fails it by design, so check the `visual-diffs` artifact). It needs the repo
-secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. By hand:
+`site/` or the tooling. Each pull request gets its own `workers.dev` preview
+(`wrangler preview`), linked in a new PR comment per deploy with a QR code for
+phones, Lighthouse scores of the preview, and a visual regression of fixed map views
+against production (`tests/visual.spec.mjs`; a PR that changes the map on purpose
+fails it by design, and the comment links a page with the differences). The preview
+is deleted when the PR is closed. Same setup as https://cfsite.klaska.net. It needs
+the repo secrets `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`. By hand:
 `npm ci && npx wrangler deploy`; the visual check:
 `PREVIEW_URL=<url> npx playwright test`.
 
-The old address, `klaska.net/floaty_territory_history/`, is still GitHub Pages
-(from `docs/` on `main`), which now holds only a page that redirects to
-floaty.klaska.net, keeping the `#…` link state.
+The old addresses still work: `klaska.net/floaty_territory_history/` is a 301 to
+floaty.klaska.net (klaska.net's own `_redirects`), and
+`radimklaska.github.io/floaty_territory_history/` is forwarded there by the
+radimklaska.github.io redirect page. The `#…` link state survives both.
 
 To try it locally, serve the repo root and point it at the local data:
 
@@ -79,7 +81,6 @@ python3 -m http.server 8000   # then open http://localhost:8000/site/?data=../
 | `index.json` | every day on file with its totals (the web map's date list) |
 | `changes.json` | per cell, the dates its owner changed (claimed, taken, or unclaimed); rebuilt from `daily/` on every run by `changes.js` |
 | `site/` | the web map |
-| `docs/` | redirect from the old GitHub Pages address |
 
 Each file is pretty-printed, with clubs sorted by id and one cell per line, so
 diffs stay readable. Files over 1 MB show as "View raw" on GitHub.

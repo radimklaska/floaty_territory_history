@@ -1,11 +1,11 @@
 // Visual regression: render fixed views of the map on the PR's preview and on
 // production, then diff the two. No stored baseline images - production is the
-// baseline. See tests/visual.spec.js.
+// baseline. See tests/visual.spec.mjs.
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
   testDir: './tests',
-  testMatch: '*.spec.js',
+  testMatch: '*.spec.mjs',
   workers: 3,
   // A single retry absorbs a slow tile server.
   retries: 1,
